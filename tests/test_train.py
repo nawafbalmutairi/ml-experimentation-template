@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.config import Config
+from src.config import Config, ValueRange
 from src.data_processor import save_dataset
 from src.data_validator import DataQualityError
 from src.predict import load_pipeline, predict, run_prediction
@@ -138,6 +138,55 @@ def test_raw_duplicates_do_not_block_training(config: Config, training_frame: pd
     assert metrics["accuracy"] > 0.8
     content = quality_reports(config)[0].read_text(encoding="utf-8")
     assert "duplicates" in content
+
+
+def test_string_class_labels_are_rejected_at_the_gate(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """The booster's own error is unreadable, so the gate has to catch this first."""
+    labelled = training_frame.assign(
+        churned=training_frame["churned"].map({0: "active", 1: "churned"})
+    )
+
+    with pytest.raises(DataQualityError, match="integer-encoded"):
+        train_on(config, labelled)
+
+    assert not config.model.output_path.exists()
+
+
+def test_multiclass_training_reports_macro_averaged_metrics(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    multiclass = replace(config, evaluation=replace(config.evaluation, metrics=["accuracy", "f1"]))
+    frame = training_frame.copy()
+    frame["churned"] = [index % 3 for index in range(len(frame))]
+
+    metrics = train_on(multiclass, frame)
+
+    assert set(metrics) == {"accuracy", "f1"}
+    assert 0.0 <= metrics["f1"] <= 1.0
+
+
+def test_invalid_rows_are_cleaned_so_the_gate_passes(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    bounded = replace(
+        config,
+        validation=replace(
+            config.validation, value_ranges={"tenure_months": ValueRange(minimum=0, maximum=72)}
+        ),
+    )
+    contaminated = training_frame.copy()
+    contaminated.loc[0, "tenure_months"] = -999.0
+
+    metrics = train_on(bounded, contaminated)
+
+    assert metrics["accuracy"] > 0.8
+    processed = pd.read_csv(bounded.data.processed_path)
+    assert processed["tenure_months"].min() >= 0
+
+    content = quality_reports(bounded)[0].read_text(encoding="utf-8")
+    assert "invalid_values" in content
 
 
 def test_regression_training_reports_regression_metrics(

@@ -184,7 +184,8 @@ def check_target_quality(
         ]
 
     if task == CLASSIFICATION:
-        return _rare_class_issues(observed, target, min_class_fraction)
+        encoding_issues = _label_encoding_issues(observed, target)
+        return encoding_issues or _rare_class_issues(observed, target, min_class_fraction)
     if not pd.api.types.is_numeric_dtype(observed):
         return [
             ValidationIssue(
@@ -310,6 +311,27 @@ def _out_of_range_issues(
                 )
             )
     return issues
+
+
+def _label_encoding_issues(observed: pd.Series, target: str) -> list[ValidationIssue]:
+    """XGBoost requires classification labels already encoded as 0..n-1.
+
+    Catching it here turns a confusing error from deep inside the booster into a clear failure
+    before any training time is spent.
+    """
+    advice = (
+        f"Classification target '{target}' must be integer-encoded as 0..n-1"
+        ", for example {'no': 0, 'yes': 1}"
+    )
+    numeric = pd.api.types.is_numeric_dtype(observed) and not pd.api.types.is_bool_dtype(observed)
+    if not numeric or not bool((observed % 1 == 0).all()):
+        found = sorted(pd.unique(observed).tolist())[:5]
+        return [ValidationIssue("target_quality", ERROR, f"{advice}. Found labels: {found}")]
+
+    labels = sorted(int(label) for label in pd.unique(observed))
+    if labels != list(range(len(labels))):
+        return [ValidationIssue("target_quality", ERROR, f"{advice}. Found labels: {labels}")]
+    return []
 
 
 def _rare_class_issues(

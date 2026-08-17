@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
+from src.config import ValueRange
 from src.data_processor import (
     clean_dataset,
+    drop_rows_with_invalid_values,
     load_dataset,
     save_dataset,
     validate_columns,
@@ -78,6 +81,54 @@ def test_clean_dataset_rejects_missing_target_column() -> None:
 
     with pytest.raises(ValueError, match=TARGET):
         clean_dataset(frame, FEATURES, TARGET)
+
+
+def test_drop_rows_with_invalid_values_removes_out_of_range_rows() -> None:
+    frame = pd.DataFrame({"age": [30.0, -5.0, 200.0], "city": ["a", "b", "c"]})
+
+    kept = drop_rows_with_invalid_values(frame, {"age": ValueRange(minimum=0, maximum=120)})
+
+    assert kept["age"].tolist() == [30.0]
+
+
+def test_drop_rows_with_invalid_values_removes_infinities_without_configured_ranges() -> None:
+    frame = pd.DataFrame({"age": [30.0, np.inf, -np.inf], "city": ["a", "b", "c"]})
+
+    kept = drop_rows_with_invalid_values(frame, {})
+
+    assert kept["age"].tolist() == [30.0]
+
+
+def test_drop_rows_with_invalid_values_keeps_missing_values() -> None:
+    frame = pd.DataFrame({"age": [30.0, None], "city": ["a", "b"]})
+
+    kept = drop_rows_with_invalid_values(frame, {"age": ValueRange(minimum=0)})
+
+    assert len(kept) == 2
+
+
+def test_drop_rows_with_invalid_values_ignores_unconfigured_and_absent_columns() -> None:
+    frame = pd.DataFrame({"age": [-5.0, 30.0], "city": ["a", "b"]})
+
+    kept = drop_rows_with_invalid_values(frame, {"absent": ValueRange(minimum=0)})
+
+    assert len(kept) == 2
+
+
+def test_clean_dataset_removes_rows_outside_the_configured_range() -> None:
+    frame = pd.DataFrame(
+        {"age": [30.0, -5.0], "city": ["a", "b"], TARGET: [1, 0]},
+    )
+
+    cleaned = clean_dataset(frame, FEATURES, TARGET, {"age": ValueRange(minimum=0)})
+
+    assert cleaned["age"].tolist() == [30.0]
+
+
+def test_clean_dataset_keeps_every_row_when_no_ranges_are_configured() -> None:
+    frame = pd.DataFrame({"age": [30.0, -5.0], "city": ["a", "b"], TARGET: [1, 0]})
+
+    assert len(clean_dataset(frame, FEATURES, TARGET)) == 2
 
 
 def test_save_dataset_creates_parent_directories(tmp_path: Path) -> None:

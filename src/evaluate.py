@@ -53,14 +53,30 @@ def classification_metrics(
     predictions: np.ndarray,
     probabilities: np.ndarray | None,
 ) -> dict[str, float]:
+    """Metrics for any label type.
+
+    Binary targets are compared against the highest label, which matches the column
+    `predict_proba` returns second and the class scikit-learn treats as positive. Targets with
+    more than two classes are averaged with `macro`, weighting every class equally.
+    """
+    labels = sorted(pd.unique(target))
+    is_binary = len(labels) == 2
+    average = "binary" if is_binary else "macro"
+
+    if is_binary:
+        actual = (target == labels[-1]).astype(int)
+        predicted = (np.asarray(predictions) == labels[-1]).astype(int)
+    else:
+        actual, predicted = target, predictions
+
     metrics = {
         "accuracy": float(accuracy_score(target, predictions)),
-        "precision": float(precision_score(target, predictions, average="binary", zero_division=0)),
-        "recall": float(recall_score(target, predictions, average="binary", zero_division=0)),
-        "f1": float(f1_score(target, predictions, average="binary", zero_division=0)),
+        "precision": float(precision_score(actual, predicted, average=average, zero_division=0)),
+        "recall": float(recall_score(actual, predicted, average=average, zero_division=0)),
+        "f1": float(f1_score(actual, predicted, average=average, zero_division=0)),
     }
-    if probabilities is not None and target.nunique() == 2:
-        metrics["roc_auc"] = float(roc_auc_score(target, probabilities))
+    if probabilities is not None and is_binary:
+        metrics["roc_auc"] = float(roc_auc_score(actual, probabilities))
     return metrics
 
 

@@ -74,7 +74,8 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `validation.report_dir` | Where data-quality reports are written |
 
 Relative paths resolve against the project root. To run against a different config, pass
-`--config path/to/config.yaml` or set `ML_CONFIG_PATH` (see `.env.example`).
+`--config path/to/config.yaml` or export `ML_CONFIG_PATH` in your shell. The template does not load
+`.env` files — `.env.example` documents the variables, it is not read at runtime.
 
 ## Adding data
 
@@ -88,7 +89,9 @@ feature values are imputed inside the pipeline, fitted on training data only.
 ## Data quality
 
 Every training run validates the dataset twice — once as loaded, once after cleaning — and writes a
-Markdown report to `validation.report_dir`. Seven independent checks run at each stage:
+Markdown report to `validation.report_dir`. Seven independent checks run at both stages, though
+cleaning removes duplicates, missing-target rows and out-of-range values, so those findings should
+appear in the raw stage only:
 
 | Check | Fails when |
 | --- | --- |
@@ -98,13 +101,14 @@ Markdown report to `validation.report_dir`. Seven independent checks run at each
 | `missingness` | A feature exceeds `max_missing_fraction` |
 | `duplicates` | Duplicate rows exceed `max_duplicate_fraction` |
 | `invalid_values` | Infinities, or values outside a configured `value_ranges` bound |
-| `target_quality` | Target missing, constant, below `min_class_fraction`, or non-numeric for regression |
+| `target_quality` | Target missing, constant, not integer-encoded as `0..n-1` for classification, below `min_class_fraction`, or non-numeric for regression |
 
 The two stages are treated differently on purpose:
 
-- **Raw stage is advisory.** Cleaning is expected to remove duplicates and missing-target rows, so
-  those findings are reported but do not stop the run. The one exception is a `schema` error —
-  without the configured columns there is nothing to clean, so training stops immediately.
+- **Raw stage is advisory.** Cleaning is expected to remove duplicates, missing-target rows and
+  values outside `value_ranges`, so those findings are reported but do not stop the run. The one
+  exception is a `schema` error — without the configured columns there is nothing to clean, so
+  training stops immediately.
 - **Processed stage is the gate.** Any error after cleaning raises `DataQualityError` and training
   stops before the model is trained or the processed dataset is written.
 
@@ -117,6 +121,9 @@ rule, write another `check_*` function in `src/data_validator.py` and add it to 
 ```bash
 python -m src.train
 ```
+
+Installing the project also exposes `ml-train` and `ml-predict` as console scripts, equivalent to the
+`python -m` invocations used throughout this README.
 
 The run loads the data, validates it, cleans it, validates it again, splits it, fits preprocessing
 plus model on the training split,
@@ -175,5 +182,10 @@ Most changes are configuration only:
 - **Different preprocessing**: change the numerical or categorical pipeline in
   `src/feature_engineer.py`. Keep transformers unfitted there so the split stays leakage-free.
 
-Multiclass classification needs one change: `average="binary"` in `src/evaluate.py` becomes
-`"macro"` or `"weighted"`.
+- **Multiclass classification**: works as-is. Encode the target as `0..n-1`; precision, recall and
+  F1 switch to macro averaging automatically, and `roc_auc` is dropped from the available metrics,
+  so remove it from `evaluation.metrics`.
+
+Classification targets must be integer-encoded (`0..n-1`) because XGBoost rejects raw string labels.
+A `yes`/`no` column fails the quality gate with an explicit message rather than a booster error; map
+it in your data before training.

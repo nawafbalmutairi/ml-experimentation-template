@@ -49,7 +49,9 @@ def run_training(config: Config) -> dict[str, float]:
     if raw_report.has_error(SCHEMA_CHECK):
         raise quality_error(raw_report, write_quality_report([raw_report], config.validation))
 
-    cleaned = clean_dataset(raw, config.features.all_features, config.data.target)
+    cleaned = clean_dataset(
+        raw, config.features.all_features, config.data.target, config.validation.value_ranges
+    )
     processed_report = validate_dataset(cleaned, config, PROCESSED_STAGE)
     report_path = write_quality_report([raw_report, processed_report], config.validation)
     if not processed_report.passed:

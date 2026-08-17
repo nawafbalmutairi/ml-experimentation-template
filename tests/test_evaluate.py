@@ -29,6 +29,50 @@ def test_classification_metrics_on_perfect_predictions() -> None:
     assert metrics["roc_auc"] == pytest.approx(1.0)
 
 
+def test_classification_metrics_distinguish_precision_from_recall() -> None:
+    """Two false positives and one false negative, so the two metrics cannot coincide."""
+    target = pd.Series([0, 0, 1, 1, 1])
+    predictions = np.array([1, 1, 1, 1, 0])
+
+    metrics = classification_metrics(target, predictions, None)
+
+    assert metrics["precision"] == pytest.approx(0.5)
+    assert metrics["recall"] == pytest.approx(2 / 3)
+    assert metrics["f1"] == pytest.approx(4 / 7)
+    assert metrics["accuracy"] == pytest.approx(0.4)
+
+
+def test_classification_metrics_score_the_higher_label_as_positive() -> None:
+    target = pd.Series(["no", "no", "yes", "yes", "yes"])
+    predictions = np.array(["yes", "yes", "yes", "yes", "no"])
+
+    metrics = classification_metrics(target, predictions, None)
+
+    assert metrics["precision"] == pytest.approx(0.5)
+    assert metrics["recall"] == pytest.approx(2 / 3)
+    assert metrics["accuracy"] == pytest.approx(0.4)
+
+
+def test_classification_metrics_handle_string_labels_for_roc_auc() -> None:
+    target = pd.Series(["no", "yes", "no", "yes"])
+    predictions = np.array(["no", "yes", "no", "yes"])
+
+    metrics = classification_metrics(target, predictions, np.array([0.1, 0.9, 0.2, 0.8]))
+
+    assert metrics["roc_auc"] == pytest.approx(1.0)
+
+
+def test_classification_metrics_average_over_classes_when_not_binary() -> None:
+    target = pd.Series([0, 1, 2, 0, 1, 2])
+    predictions = np.array([0, 1, 2, 0, 1, 1])
+
+    metrics = classification_metrics(target, predictions, None)
+
+    assert metrics["accuracy"] == pytest.approx(5 / 6)
+    assert 0.0 < metrics["f1"] < 1.0
+    assert "roc_auc" not in metrics
+
+
 def test_classification_metrics_omit_roc_auc_without_probabilities() -> None:
     target = pd.Series([0, 1])
 

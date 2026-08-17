@@ -217,6 +217,36 @@ def test_check_target_quality_rejects_classes_below_the_minimum_share() -> None:
     assert "1.0%" in issues[0].message
 
 
+def test_check_target_quality_rejects_string_class_labels() -> None:
+    frame = valid_frame().assign(**{TARGET: ["active", "churned"] * 10})
+
+    issues = check_target_quality(frame, TARGET, "classification", 0.05)
+
+    assert severities(issues) == {ERROR}
+    assert "integer-encoded" in issues[0].message
+
+
+def test_check_target_quality_rejects_labels_that_do_not_start_at_zero() -> None:
+    frame = valid_frame().assign(**{TARGET: [1, 2] * 10})
+
+    issues = check_target_quality(frame, TARGET, "classification", 0.05)
+
+    assert severities(issues) == {ERROR}
+    assert "[1, 2]" in issues[0].message
+
+
+def test_check_target_quality_accepts_whole_number_float_labels() -> None:
+    frame = valid_frame().assign(**{TARGET: [0.0, 1.0] * 10})
+
+    assert check_target_quality(frame, TARGET, "classification", 0.05) == []
+
+
+def test_check_target_quality_accepts_encoded_multiclass_labels() -> None:
+    frame = valid_frame(30).assign(**{TARGET: [0, 1, 2] * 10})
+
+    assert check_target_quality(frame, TARGET, "classification", 0.05) == []
+
+
 def test_check_target_quality_accepts_a_continuous_regression_target() -> None:
     frame = valid_frame().assign(**{TARGET: np.linspace(1.0, 10.0, 20)})
 
