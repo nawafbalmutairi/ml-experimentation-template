@@ -1,0 +1,38 @@
+seed: 42
+
+data:
+  raw_path: data/raw/sample.csv
+  processed_path: data/processed/dataset.csv
+  target: churned
+
+features:
+  numerical:
+    - tenure_months
+    - monthly_charges
+    - support_tickets
+  categorical:
+    - contract_type
+    - region
+
+split:
+  test_size: 0.2
+
+model:
+  task: classification # classification | regression
+  type: xgboost
+  output_path: models/pipeline.joblib
+  params:
+    n_estimators: 200
+    max_depth: 4
+    learning_rate: 0.1
+    subsample: 0.9
+    colsample_bytree: 0.9
+
+evaluation:
+  results_dir: experiments/results
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - roc_auc
