@@ -63,13 +63,17 @@ def test_classification_metrics_handle_string_labels_for_roc_auc() -> None:
 
 
 def test_classification_metrics_average_over_classes_when_not_binary() -> None:
-    target = pd.Series([0, 1, 2, 0, 1, 2])
-    predictions = np.array([0, 1, 2, 0, 1, 1])
+    """Class supports are unequal, so macro averaging differs from weighted and micro."""
+    target = pd.Series([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2])
+    predictions = np.array([0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0])
 
     metrics = classification_metrics(target, predictions, None)
 
-    assert metrics["accuracy"] == pytest.approx(5 / 6)
-    assert 0.0 < metrics["f1"] < 1.0
+    per_class_f1 = (2 / 3, 6 / 7, 10 / 11)
+    assert metrics["f1"] == pytest.approx(sum(per_class_f1) / 3)
+    assert metrics["precision"] == pytest.approx((2 / 3 + 3 / 4 + 1.0) / 3)
+    assert metrics["recall"] == pytest.approx((2 / 3 + 1.0 + 5 / 6) / 3)
+    assert metrics["accuracy"] == pytest.approx(10 / 12)
     assert "roc_auc" not in metrics
 
 

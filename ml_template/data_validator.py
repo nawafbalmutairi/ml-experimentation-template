@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ml_template.config import CLASSIFICATION, Config, ValidationConfig, ValueRange
+from ml_template.model import LABEL_ENCODED_MODEL_TYPES
 
 ERROR = "error"
 WARNING = "warning"
@@ -132,11 +133,12 @@ def check_duplicates(
 
 def check_invalid_values(
     frame: pd.DataFrame,
-    numerical_features: Sequence[str],
+    columns: Sequence[str],
     value_ranges: dict[str, ValueRange],
 ) -> list[ValidationIssue]:
+    """Non-numeric columns are skipped, so this covers exactly what cleaning drops rows for."""
     issues = []
-    for column in numerical_features:
+    for column in columns:
         if column not in frame.columns or not pd.api.types.is_numeric_dtype(frame[column]):
             continue
         values = frame[column]
@@ -158,6 +160,7 @@ def check_target_quality(
     target: str,
     task: str,
     min_class_fraction: float,
+    require_encoded_labels: bool = True,
 ) -> list[ValidationIssue]:
     if target not in frame.columns:
         return [ValidationIssue("target_quality", ERROR, f"Target column '{target}' is missing")]
@@ -184,7 +187,7 @@ def check_target_quality(
         ]
 
     if task == CLASSIFICATION:
-        encoding_issues = _label_encoding_issues(observed, target)
+        encoding_issues = _label_encoding_issues(observed, target) if require_encoded_labels else []
         return encoding_issues or _rare_class_issues(observed, target, min_class_fraction)
     if not pd.api.types.is_numeric_dtype(observed):
         return [
@@ -220,9 +223,13 @@ def validate_dataset(frame: pd.DataFrame, config: Config, stage: str) -> Validat
         *check_data_types(frame, features.numerical, features.categorical),
         *check_missingness(frame, features.all_features, validation.max_missing_fraction),
         *check_duplicates(frame, validation.max_duplicate_fraction),
-        *check_invalid_values(frame, features.numerical, validation.value_ranges),
+        *check_invalid_values(frame, modelling_columns, validation.value_ranges),
         *check_target_quality(
-            frame, config.data.target, config.model.task, validation.min_class_fraction
+            frame,
+            config.data.target,
+            config.model.task,
+            validation.min_class_fraction,
+            require_encoded_labels=config.model.type in LABEL_ENCODED_MODEL_TYPES,
         ),
     ]
     return ValidationReport(
@@ -314,24 +321,37 @@ def _out_of_range_issues(
 
 
 def _label_encoding_issues(observed: pd.Series, target: str) -> list[ValidationIssue]:
-    """XGBoost requires classification labels already encoded as 0..n-1.
+    """Some model families, XGBoost among them, require labels already encoded as 0..n-1.
 
     Catching it here turns a confusing error from deep inside the booster into a clear failure
     before any training time is spent.
     """
     advice = (
-        f"Classification target '{target}' must be integer-encoded as 0..n-1"
-        ", for example {'no': 0, 'yes': 1}"
+        f"Classification target '{target}' must be integer-encoded as 0..n-1 for model type"
+        " 'xgboost', for example {'no': 0, 'yes': 1}"
     )
-    numeric = pd.api.types.is_numeric_dtype(observed) and not pd.api.types.is_bool_dtype(observed)
-    if not numeric or not bool((observed % 1 == 0).all()):
-        found = sorted(pd.unique(observed).tolist())[:5]
+    labels = _encoded_labels(observed)
+    if labels is None:
+        found = sorted(pd.unique(observed).tolist(), key=repr)[:5]
         return [ValidationIssue("target_quality", ERROR, f"{advice}. Found labels: {found}")]
-
-    labels = sorted(int(label) for label in pd.unique(observed))
     if labels != list(range(len(labels))):
         return [ValidationIssue("target_quality", ERROR, f"{advice}. Found labels: {labels}")]
     return []
+
+
+def _encoded_labels(observed: pd.Series) -> list[int] | None:
+    """The integers behind the labels, or None when they are not whole numbers.
+
+    Booleans and numeric categoricals are already 0/1 to the estimators, so they count as encoded.
+    """
+    labels = pd.Series(pd.unique(observed))
+    if isinstance(labels.dtype, pd.CategoricalDtype):
+        labels = labels.astype(labels.cat.categories.dtype)
+    if pd.api.types.is_bool_dtype(labels):
+        labels = labels.astype(int)
+    if not pd.api.types.is_numeric_dtype(labels) or not bool((labels % 1 == 0).all()):
+        return None
+    return sorted(int(label) for label in labels)
 
 
 def _rare_class_issues(

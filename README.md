@@ -152,6 +152,10 @@ The saved pipeline carries its own preprocessing, so inference applies exactly t
 learned during training. The input CSV needs the configured feature columns; the target column is
 not required.
 
+Prediction does not apply the quality gate: every input row gets a prediction, including rows that
+training would have dropped for falling outside `validation.value_ranges`. Such rows are scored by
+extrapolating well outside the training distribution, so screen them yourself if that matters.
+
 ## Tests
 
 ```bash
@@ -178,14 +182,16 @@ Most changes are configuration only:
   `evaluation.metrics` with `[mae, rmse, r2]`.
 - **Different hyperparameters**: edit `model.params`.
 - **Different model family**: add an entry to `MODEL_FACTORIES` in `ml_template/model.py` mapping
-  `(type, task)` to a scikit-learn compatible estimator, then set `model.type` accordingly.
+  `(type, task)` to a scikit-learn compatible estimator, then set `model.type` accordingly. If it
+  accepts raw class labels, leave it out of `LABEL_ENCODED_MODEL_TYPES` in the same file and the
+  label-encoding check will not apply to it.
 - **Different preprocessing**: change the numerical or categorical pipeline in
-  `ml_template/feature_engineer.py`. Keep transformers unfitted there so the split stays leakage-free.
-
+  `ml_template/feature_engineer.py`. Keep transformers unfitted there so the split stays
+  leakage-free.
 - **Multiclass classification**: works as-is. Encode the target as `0..n-1`; precision, recall and
   F1 switch to macro averaging automatically, and `roc_auc` is dropped from the available metrics,
   so remove it from `evaluation.metrics`.
 
-Classification targets must be integer-encoded (`0..n-1`) because XGBoost rejects raw string labels.
-A `yes`/`no` column fails the quality gate with an explicit message rather than a booster error; map
-it in your data before training.
+XGBoost rejects raw class labels, so with the shipped `model.type` a classification target must be
+integers `0..n-1`, booleans, or a numeric categorical. A `yes`/`no` column fails the quality gate
+with an explicit message rather than a booster error; map it in your data before training.

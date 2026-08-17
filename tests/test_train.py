@@ -140,6 +140,18 @@ def test_raw_duplicates_do_not_block_training(config: Config, training_frame: pd
     assert "duplicates" in content
 
 
+def test_boolean_class_labels_train_successfully(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """A True/False column is what pandas reads such a CSV as, and XGBoost accepts it."""
+    boolean = training_frame.assign(churned=training_frame["churned"].astype(bool))
+
+    metrics = train_on(config, boolean)
+
+    assert metrics["accuracy"] > 0.8
+    assert 0.0 <= metrics["roc_auc"] <= 1.0
+
+
 def test_string_class_labels_are_rejected_at_the_gate(
     config: Config, training_frame: pd.DataFrame
 ) -> None:
@@ -154,9 +166,7 @@ def test_string_class_labels_are_rejected_at_the_gate(
     assert not config.model.output_path.exists()
 
 
-def test_multiclass_training_reports_macro_averaged_metrics(
-    config: Config, training_frame: pd.DataFrame
-) -> None:
+def test_multiclass_training_completes(config: Config, training_frame: pd.DataFrame) -> None:
     multiclass = replace(config, evaluation=replace(config.evaluation, metrics=["accuracy", "f1"]))
     frame = training_frame.copy()
     frame["churned"] = [index % 3 for index in range(len(frame))]

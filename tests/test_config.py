@@ -159,9 +159,9 @@ def test_config_path_from_the_environment_is_used(
 def test_shipped_config_matches_the_shipped_dataset() -> None:
     """The template must train on a fresh clone using the documented command."""
     config = load_config(DEFAULT_CONFIG_PATH)
-    frame = pd.read_csv(config.data.raw_path)
-
     assert config.data.raw_path.is_file()
+
+    frame = pd.read_csv(config.data.raw_path)
     for column in [*config.features.all_features, config.data.target]:
         assert column in frame.columns
 

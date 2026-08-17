@@ -8,7 +8,10 @@ from ml_template.data_processor import clean_dataset, load_dataset
 
 config = load_config()
 frame = clean_dataset(
-    load_dataset(config.data.raw_path), config.features.all_features, config.data.target
+    load_dataset(config.data.raw_path),
+    config.features.all_features,
+    config.data.target,
+    config.validation.value_ranges,
 )
 ```
 

@@ -12,6 +12,9 @@ MODEL_FACTORIES: dict[tuple[str, str], Callable[..., BaseEstimator]] = {
     ("xgboost", REGRESSION): XGBRegressor,
 }
 
+# Model types that reject raw class labels and need them encoded as 0..n-1.
+LABEL_ENCODED_MODEL_TYPES = frozenset({"xgboost"})
+
 
 def create_model(config: ModelConfig, seed: int) -> BaseEstimator:
     factory = MODEL_FACTORIES.get((config.type, config.task))

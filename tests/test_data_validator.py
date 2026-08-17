@@ -235,6 +235,28 @@ def test_check_target_quality_rejects_labels_that_do_not_start_at_zero() -> None
     assert "[1, 2]" in issues[0].message
 
 
+def test_check_target_quality_accepts_boolean_labels() -> None:
+    frame = valid_frame().assign(**{TARGET: [True, False] * 10})
+
+    assert check_target_quality(frame, TARGET, "classification", 0.05) == []
+
+
+def test_check_target_quality_accepts_numeric_categorical_labels() -> None:
+    frame = valid_frame().assign(**{TARGET: pd.Categorical([0, 1] * 10)})
+
+    assert check_target_quality(frame, TARGET, "classification", 0.05) == []
+
+
+def test_check_target_quality_skips_label_encoding_for_models_that_accept_raw_labels() -> None:
+    frame = valid_frame().assign(**{TARGET: ["active", "churned"] * 10})
+
+    issues = check_target_quality(
+        frame, TARGET, "classification", 0.05, require_encoded_labels=False
+    )
+
+    assert issues == []
+
+
 def test_check_target_quality_accepts_whole_number_float_labels() -> None:
     frame = valid_frame().assign(**{TARGET: [0.0, 1.0] * 10})
 
