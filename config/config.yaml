@@ -28,6 +28,21 @@ model:
     subsample: 0.9
     colsample_bytree: 0.9
 
+validation:
+  min_rows: 50
+  max_missing_fraction: 0.2
+  max_duplicate_fraction: 0.05
+  min_class_fraction: 0.05
+  report_dir: reports/data_quality
+  value_ranges:
+    tenure_months:
+      min: 0
+      max: 120
+    monthly_charges:
+      min: 0
+    support_tickets:
+      min: 0
+
 evaluation:
   results_dir: experiments/results
   metrics:

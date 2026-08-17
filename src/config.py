@@ -52,6 +52,22 @@ class EvaluationConfig:
 
 
 @dataclass(frozen=True)
+class ValueRange:
+    minimum: float | None = None
+    maximum: float | None = None
+
+
+@dataclass(frozen=True)
+class ValidationConfig:
+    min_rows: int
+    max_missing_fraction: float
+    max_duplicate_fraction: float
+    min_class_fraction: float
+    report_dir: Path
+    value_ranges: dict[str, ValueRange]
+
+
+@dataclass(frozen=True)
 class Config:
     seed: int
     data: DataConfig
@@ -59,6 +75,7 @@ class Config:
     split: SplitConfig
     model: ModelConfig
     evaluation: EvaluationConfig
+    validation: ValidationConfig
 
 
 def default_config_path() -> Path:
@@ -91,6 +108,7 @@ def _build_config(raw: dict[str, Any]) -> Config:
     split = _section(raw, "split")
     model = _section(raw, "model")
     evaluation = _section(raw, "evaluation")
+    validation = _section(raw, "validation")
 
     task = str(model["task"])
     if task not in SUPPORTED_TASKS:
@@ -122,7 +140,46 @@ def _build_config(raw: dict[str, Any]) -> Config:
             results_dir=resolve_path(evaluation["results_dir"]),
             metrics=list(evaluation["metrics"]),
         ),
+        validation=_build_validation_config(validation),
     )
+
+
+def _build_validation_config(validation: dict[str, Any]) -> ValidationConfig:
+    min_rows = int(validation["min_rows"])
+    if min_rows < 1:
+        raise ValueError(f"validation.min_rows must be at least 1, got {min_rows}")
+
+    return ValidationConfig(
+        min_rows=min_rows,
+        max_missing_fraction=_fraction(validation, "max_missing_fraction"),
+        max_duplicate_fraction=_fraction(validation, "max_duplicate_fraction"),
+        min_class_fraction=_fraction(validation, "min_class_fraction"),
+        report_dir=resolve_path(validation["report_dir"]),
+        value_ranges=_build_value_ranges(validation.get("value_ranges") or {}),
+    )
+
+
+def _fraction(validation: dict[str, Any], name: str) -> float:
+    value = float(validation[name])
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"validation.{name} must be between 0 and 1, got {value}")
+    return value
+
+
+def _build_value_ranges(raw_ranges: dict[str, Any]) -> dict[str, ValueRange]:
+    ranges = {}
+    for column, bounds in raw_ranges.items():
+        if not isinstance(bounds, dict):
+            raise ValueError(f"validation.value_ranges.{column} must be a mapping of min/max")
+        minimum = bounds.get("min")
+        maximum = bounds.get("max")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ValueError(f"validation.value_ranges.{column} has min greater than max")
+        ranges[column] = ValueRange(
+            minimum=None if minimum is None else float(minimum),
+            maximum=None if maximum is None else float(maximum),
+        )
+    return ranges
 
 
 def _section(raw: dict[str, Any], name: str) -> dict[str, Any]:

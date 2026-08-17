@@ -10,6 +10,15 @@ from sklearn.pipeline import Pipeline
 
 from src.config import CLASSIFICATION, Config, default_config_path, load_config
 from src.data_processor import clean_dataset, load_dataset, save_dataset
+from src.data_validator import (
+    PROCESSED_STAGE,
+    RAW_STAGE,
+    SCHEMA_CHECK,
+    DataQualityError,
+    ValidationReport,
+    validate_dataset,
+    write_quality_report,
+)
 from src.evaluate import evaluate_model, save_metrics
 from src.feature_engineer import build_preprocessor, split_features_and_target
 from src.model import create_model
@@ -26,9 +35,26 @@ def save_pipeline(pipeline: Pipeline, path: Path) -> None:
     joblib.dump(pipeline, path)
 
 
+def quality_error(report: ValidationReport, report_path: Path) -> DataQualityError:
+    details = "\n".join(f"- {issue.check}: {issue.message}" for issue in report.errors)
+    return DataQualityError(
+        f"{report.stage.capitalize()} data failed {len(report.errors)} quality check(s). "
+        f"See {report_path}\n{details}"
+    )
+
+
 def run_training(config: Config) -> dict[str, float]:
     raw = load_dataset(config.data.raw_path)
+    raw_report = validate_dataset(raw, config, RAW_STAGE)
+    if raw_report.has_error(SCHEMA_CHECK):
+        raise quality_error(raw_report, write_quality_report([raw_report], config.validation))
+
     cleaned = clean_dataset(raw, config.features.all_features, config.data.target)
+    processed_report = validate_dataset(cleaned, config, PROCESSED_STAGE)
+    report_path = write_quality_report([raw_report, processed_report], config.validation)
+    if not processed_report.passed:
+        raise quality_error(processed_report, report_path)
+
     save_dataset(cleaned, config.data.processed_path)
 
     features, target = split_features_and_target(

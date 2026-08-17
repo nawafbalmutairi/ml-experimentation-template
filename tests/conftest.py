@@ -13,6 +13,7 @@ from src.config import (
     FeatureConfig,
     ModelConfig,
     SplitConfig,
+    ValidationConfig,
 )
 
 NUMERICAL_FEATURES = ["tenure_months", "monthly_charges"]
@@ -61,5 +62,13 @@ def config(tmp_path: Path) -> Config:
         evaluation=EvaluationConfig(
             results_dir=tmp_path / "results",
             metrics=["accuracy", "f1", "roc_auc"],
+        ),
+        validation=ValidationConfig(
+            min_rows=10,
+            max_missing_fraction=0.2,
+            max_duplicate_fraction=0.05,
+            min_class_fraction=0.05,
+            report_dir=tmp_path / "data_quality",
+            value_ranges={},
         ),
     )

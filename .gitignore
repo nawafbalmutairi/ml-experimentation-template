@@ -33,6 +33,9 @@ experiments/results/*
 
 reports/*
 !reports/.gitkeep
+!reports/data_quality/
+reports/data_quality/*
+!reports/data_quality/.gitkeep
 
 .DS_Store
 .idea/

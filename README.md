@@ -18,6 +18,7 @@ data/external/            Third-party data pulled in by your own scripts
 notebooks/                Exploration; import from src/ instead of copying logic
 src/config.py             Loads and validates config.yaml into typed dataclasses
 src/data_processor.py     Loading, validation and cleaning
+src/data_validator.py     Data-quality checks, quality gate and report rendering
 src/feature_engineer.py   Feature/target split and the preprocessing ColumnTransformer
 src/model.py              Model creation from configuration
 src/train.py              Training entry point (orchestration only)
@@ -27,6 +28,7 @@ tests/                    Unit tests
 models/                   Saved pipelines
 experiments/results/      Metric JSON files, one per training run
 reports/                  Figures and write-ups you produce
+reports/data_quality/     Data-quality reports, one per training run
 scripts/verify.py         The one verification command (format, lint, types, tests)
 ```
 
@@ -64,6 +66,12 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `model.params` | Hyperparameters passed straight to the model |
 | `evaluation.results_dir` | Where metric JSON files are written |
 | `evaluation.metrics` | Metrics to report, validated against the task |
+| `validation.min_rows` | Minimum usable rows required to train |
+| `validation.max_missing_fraction` | Highest tolerated missing share per feature column |
+| `validation.max_duplicate_fraction` | Highest tolerated share of duplicate rows |
+| `validation.min_class_fraction` | Smallest tolerated class share (classification only) |
+| `validation.value_ranges` | Optional per-column `min`/`max` bounds |
+| `validation.report_dir` | Where data-quality reports are written |
 
 Relative paths resolve against the project root. To run against a different config, pass
 `--config path/to/config.yaml` or set `ML_CONFIG_PATH` (see `.env.example`).
@@ -77,13 +85,41 @@ Relative paths resolve against the project root. To run against a different conf
 Columns not listed in the config are dropped. Rows with a missing target are dropped; missing
 feature values are imputed inside the pipeline, fitted on training data only.
 
+## Data quality
+
+Every training run validates the dataset twice — once as loaded, once after cleaning — and writes a
+Markdown report to `validation.report_dir`. Seven independent checks run at each stage:
+
+| Check | Fails when |
+| --- | --- |
+| `schema` | A configured feature or target column is absent |
+| `minimum_rows` | Fewer rows than `min_rows` |
+| `data_types` | A numerical feature is non-numeric (error), or a categorical feature is numeric (warning) |
+| `missingness` | A feature exceeds `max_missing_fraction` |
+| `duplicates` | Duplicate rows exceed `max_duplicate_fraction` |
+| `invalid_values` | Infinities, or values outside a configured `value_ranges` bound |
+| `target_quality` | Target missing, constant, below `min_class_fraction`, or non-numeric for regression |
+
+The two stages are treated differently on purpose:
+
+- **Raw stage is advisory.** Cleaning is expected to remove duplicates and missing-target rows, so
+  those findings are reported but do not stop the run. The one exception is a `schema` error —
+  without the configured columns there is nothing to clean, so training stops immediately.
+- **Processed stage is the gate.** Any error after cleaning raises `DataQualityError` and training
+  stops before the model is trained or the processed dataset is written.
+
+The report is always written before the gate raises, so a failed run still leaves you the evidence.
+Warnings never block. To tune strictness, edit the `validation` block in `config.yaml`; to add a new
+rule, write another `check_*` function in `src/data_validator.py` and add it to `validate_dataset`.
+
 ## Training
 
 ```bash
 python -m src.train
 ```
 
-The run loads and cleans the data, splits it, fits preprocessing plus model on the training split,
+The run loads the data, validates it, cleans it, validates it again, splits it, fits preprocessing
+plus model on the training split,
 evaluates on the test split, writes metrics to `experiments/results/` and saves the fitted pipeline
 to `model.output_path`.
 
