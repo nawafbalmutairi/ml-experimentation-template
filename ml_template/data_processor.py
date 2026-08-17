@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.config import ValueRange
+from ml_template.config import ValueRange
 
 
 def load_dataset(path: Path) -> pd.DataFrame:

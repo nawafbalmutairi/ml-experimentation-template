@@ -5,8 +5,8 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from src.config import Config, ValueRange
-from src.data_validator import (
+from ml_template.config import Config, ValueRange
+from ml_template.data_validator import (
     ERROR,
     PROCESSED_STAGE,
     RAW_STAGE,

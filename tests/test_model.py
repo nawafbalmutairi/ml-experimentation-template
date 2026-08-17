@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from xgboost import XGBClassifier, XGBRegressor
 
-from src.config import Config, ModelConfig
-from src.model import create_model
+from ml_template.config import Config, ModelConfig
+from ml_template.model import create_model
 
 
 def model_config(task: str, tmp_path: Path, **params: object) -> ModelConfig:

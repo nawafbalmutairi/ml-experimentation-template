@@ -27,11 +27,11 @@ dev = [
 ]
 
 [project.scripts]
-ml-train = "src.train:main"
-ml-predict = "src.predict:main"
+ml-train = "ml_template.train:main"
+ml-predict = "ml_template.predict:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["ml_template"]
 
 [tool.ruff]
 line-length = 100
@@ -41,7 +41,7 @@ target-version = "py310"
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
-files = ["src", "tests", "scripts"]
+files = ["ml_template", "tests", "scripts"]
 disallow_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true

@@ -11,25 +11,25 @@ production, expect to replace those pieces.
 ## Project structure
 
 ```
-config/config.yaml        Single source of truth for paths, features, split, model and metrics
-data/raw/                 Input datasets (sample.csv ships with the template)
-data/processed/           Cleaned datasets written by training
-data/external/            Third-party data pulled in by your own scripts
-notebooks/                Exploration; import from src/ instead of copying logic
-src/config.py             Loads and validates config.yaml into typed dataclasses
-src/data_processor.py     Loading, validation and cleaning
-src/data_validator.py     Data-quality checks, quality gate and report rendering
-src/feature_engineer.py   Feature/target split and the preprocessing ColumnTransformer
-src/model.py              Model creation from configuration
-src/train.py              Training entry point (orchestration only)
-src/evaluate.py           Classification and regression metrics, metric persistence
-src/predict.py            Inference with the saved pipeline
-tests/                    Unit tests
-models/                   Saved pipelines
-experiments/results/      Metric JSON files, one per training run
-reports/                  Figures and write-ups you produce
-reports/data_quality/     Data-quality reports, one per training run
-scripts/verify.py         The one verification command (format, lint, types, tests)
+config/config.yaml               Single source of truth for paths, features, split, model, metrics
+data/raw/                        Input datasets (sample.csv ships with the template)
+data/processed/                  Cleaned datasets written by training
+data/external/                   Third-party data pulled in by your own scripts
+notebooks/                       Exploration; import from ml_template/ instead of copying logic
+ml_template/config.py            Loads and validates config.yaml into typed dataclasses
+ml_template/data_processor.py    Loading, validation and cleaning
+ml_template/data_validator.py    Data-quality checks, quality gate and report rendering
+ml_template/feature_engineer.py  Feature/target split and the preprocessing ColumnTransformer
+ml_template/model.py             Model creation from configuration
+ml_template/train.py             Training entry point (orchestration only)
+ml_template/evaluate.py          Classification and regression metrics, metric persistence
+ml_template/predict.py           Inference with the saved pipeline
+tests/                           Unit tests
+models/                          Saved pipelines
+experiments/results/             Metric JSON files, one per training run
+reports/                         Figures and write-ups you produce
+reports/data_quality/            Data-quality reports, one per training run
+scripts/verify.py                The one verification command (format, lint, types, tests)
 ```
 
 ## Installation
@@ -114,27 +114,27 @@ The two stages are treated differently on purpose:
 
 The report is always written before the gate raises, so a failed run still leaves you the evidence.
 Warnings never block. To tune strictness, edit the `validation` block in `config.yaml`; to add a new
-rule, write another `check_*` function in `src/data_validator.py` and add it to `validate_dataset`.
+rule, write another `check_*` function in `ml_template/data_validator.py` and add it to
+`validate_dataset`.
 
 ## Training
 
 ```bash
-python -m src.train
+python -m ml_template.train
 ```
 
 Installing the project also exposes `ml-train` and `ml-predict` as console scripts, equivalent to the
 `python -m` invocations used throughout this README.
 
 The run loads the data, validates it, cleans it, validates it again, splits it, fits preprocessing
-plus model on the training split,
-evaluates on the test split, writes metrics to `experiments/results/` and saves the fitted pipeline
-to `model.output_path`.
+plus model on the training split, evaluates on the test split, writes metrics to
+`experiments/results/` and saves the fitted pipeline to `model.output_path`.
 
 ## Evaluation
 
-Metrics are computed by `src/evaluate.py` and printed at the end of training, and every run appends
-a timestamped JSON file to `experiments/results/` containing the metrics, model type, parameters and
-row counts.
+Metrics are computed by `ml_template/evaluate.py` and printed at the end of training, and every run
+appends a timestamped JSON file to `experiments/results/` containing the metrics, model type,
+parameters and row counts.
 
 - Classification: `accuracy`, `precision`, `recall`, `f1`, `roc_auc` (binary targets only)
 - Regression: `mae`, `rmse`, `r2`
@@ -145,7 +145,7 @@ silently reporting the wrong thing.
 ## Prediction
 
 ```bash
-python -m src.predict --input data/raw/sample.csv --output reports/predictions.csv
+python -m ml_template.predict --input data/raw/sample.csv --output reports/predictions.csv
 ```
 
 The saved pipeline carries its own preprocessing, so inference applies exactly the transformations
@@ -177,10 +177,10 @@ Most changes are configuration only:
 - **Regression instead of classification**: set `model.task: regression` and replace
   `evaluation.metrics` with `[mae, rmse, r2]`.
 - **Different hyperparameters**: edit `model.params`.
-- **Different model family**: add an entry to `MODEL_FACTORIES` in `src/model.py` mapping
+- **Different model family**: add an entry to `MODEL_FACTORIES` in `ml_template/model.py` mapping
   `(type, task)` to a scikit-learn compatible estimator, then set `model.type` accordingly.
 - **Different preprocessing**: change the numerical or categorical pipeline in
-  `src/feature_engineer.py`. Keep transformers unfitted there so the split stays leakage-free.
+  `ml_template/feature_engineer.py`. Keep transformers unfitted there so the split stays leakage-free.
 
 - **Multiclass classification**: works as-is. Encode the target as `0..n-1`; precision, recall and
   F1 switch to macro averaging automatically, and `roc_auc` is dropped from the available metrics,

@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src.config import DEFAULT_CONFIG_PATH, PROJECT_ROOT, load_config
+from ml_template.config import DEFAULT_CONFIG_PATH, PROJECT_ROOT, load_config
 
 VALID_CONFIG: dict[str, Any] = {
     "seed": 7,

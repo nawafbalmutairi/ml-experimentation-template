@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.config import CLASSIFICATION, Config, ValidationConfig, ValueRange
+from ml_template.config import CLASSIFICATION, Config, ValidationConfig, ValueRange
 
 ERROR = "error"
 WARNING = "warning"

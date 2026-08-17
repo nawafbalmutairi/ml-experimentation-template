@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.config import ValueRange
-from src.data_processor import (
+from ml_template.config import ValueRange
+from ml_template.data_processor import (
     clean_dataset,
     drop_rows_with_invalid_values,
     load_dataset,

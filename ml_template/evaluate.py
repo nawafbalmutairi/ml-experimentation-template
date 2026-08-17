@@ -20,7 +20,7 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 
-from src.config import CLASSIFICATION, REGRESSION, EvaluationConfig
+from ml_template.config import CLASSIFICATION, REGRESSION, EvaluationConfig
 
 
 def evaluate_model(

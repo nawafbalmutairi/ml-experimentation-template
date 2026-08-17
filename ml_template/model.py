@@ -5,7 +5,7 @@ from collections.abc import Callable
 from sklearn.base import BaseEstimator
 from xgboost import XGBClassifier, XGBRegressor
 
-from src.config import CLASSIFICATION, REGRESSION, ModelConfig
+from ml_template.config import CLASSIFICATION, REGRESSION, ModelConfig
 
 MODEL_FACTORIES: dict[tuple[str, str], Callable[..., BaseEstimator]] = {
     ("xgboost", CLASSIFICATION): XGBClassifier,

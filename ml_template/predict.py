@@ -8,8 +8,8 @@ import joblib
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from src.config import Config, default_config_path, load_config
-from src.data_processor import load_dataset, validate_columns
+from ml_template.config import Config, default_config_path, load_config
+from ml_template.data_processor import load_dataset, validate_columns
 
 
 def load_pipeline(path: Path) -> Pipeline:

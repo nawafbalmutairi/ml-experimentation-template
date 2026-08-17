@@ -8,9 +8,9 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-from src.config import CLASSIFICATION, Config, default_config_path, load_config
-from src.data_processor import clean_dataset, load_dataset, save_dataset
-from src.data_validator import (
+from ml_template.config import CLASSIFICATION, Config, default_config_path, load_config
+from ml_template.data_processor import clean_dataset, load_dataset, save_dataset
+from ml_template.data_validator import (
     PROCESSED_STAGE,
     RAW_STAGE,
     SCHEMA_CHECK,
@@ -19,9 +19,9 @@ from src.data_validator import (
     validate_dataset,
     write_quality_report,
 )
-from src.evaluate import evaluate_model, save_metrics
-from src.feature_engineer import build_preprocessor, split_features_and_target
-from src.model import create_model
+from ml_template.evaluate import evaluate_model, save_metrics
+from ml_template.feature_engineer import build_preprocessor, split_features_and_target
+from ml_template.model import create_model
 
 
 def build_pipeline(config: Config) -> Pipeline:

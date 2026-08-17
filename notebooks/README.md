@@ -1,10 +1,10 @@
 # Notebooks
 
-Exploration and analysis live here. Import from `src/` rather than copying logic into a cell:
+Exploration and analysis live here. Import from `ml_template/` rather than copying logic into a cell:
 
 ```python
-from src.config import load_config
-from src.data_processor import clean_dataset, load_dataset
+from ml_template.config import load_config
+from ml_template.data_processor import clean_dataset, load_dataset
 
 config = load_config()
 frame = clean_dataset(
@@ -12,4 +12,4 @@ frame = clean_dataset(
 )
 ```
 
-Anything a notebook proves useful should move into `src/` and get a test.
+Anything a notebook proves useful should move into `ml_template/` and get a test.

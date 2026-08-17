@@ -7,11 +7,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.config import Config, ValueRange
-from src.data_processor import save_dataset
-from src.data_validator import DataQualityError
-from src.predict import load_pipeline, predict, run_prediction
-from src.train import run_training
+from ml_template.config import Config, ValueRange
+from ml_template.data_processor import save_dataset
+from ml_template.data_validator import DataQualityError
+from ml_template.predict import load_pipeline, predict, run_prediction
+from ml_template.train import run_training
 
 
 def train_on(config: Config, frame: pd.DataFrame) -> dict[str, float]:

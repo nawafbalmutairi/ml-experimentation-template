@@ -6,15 +6,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.config import Config
-from src.evaluate import (
+from ml_template.config import Config
+from ml_template.evaluate import (
     classification_metrics,
     evaluate_model,
     regression_metrics,
     save_metrics,
 )
-from src.feature_engineer import split_features_and_target
-from src.train import build_pipeline
+from ml_template.feature_engineer import split_features_and_target
+from ml_template.train import build_pipeline
 from tests.conftest import TARGET
 
 

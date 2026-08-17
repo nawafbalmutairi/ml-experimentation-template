@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.config import (
+from ml_template.config import (
     Config,
     DataConfig,
     EvaluationConfig,

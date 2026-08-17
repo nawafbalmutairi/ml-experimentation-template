@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.feature_engineer import build_preprocessor, split_features_and_target
+from ml_template.feature_engineer import build_preprocessor, split_features_and_target
 
 NUMERICAL = ["age"]
 CATEGORICAL = ["city"]
