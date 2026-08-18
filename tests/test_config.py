@@ -251,7 +251,7 @@ def test_shipped_config_matches_the_shipped_dataset(monkeypatch: pytest.MonkeyPa
     config = load_config(REPO_ROOT / "config" / "config.yaml")
     assert config.data.raw_path.is_file()
 
-    frame = pd.read_csv(config.data.raw_path)
+    frame = pd.read_csv(config.data.raw_path, sep=config.data.separator)
     for column in [*config.features.all_features, config.data.target]:
         assert column in frame.columns
 
