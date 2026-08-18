@@ -30,6 +30,7 @@ experiments/results/             Metric JSON files, one per training run
 reports/                         Figures and write-ups you produce
 reports/data_quality/            Data-quality reports, one per training run
 scripts/verify.py                The one verification command (format, lint, types, tests)
+scripts/lift_analysis.py         Decile lift on the held-out set, for ranking problems
 ```
 
 ## Installation
@@ -58,8 +59,11 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `data.raw_path` | Input dataset |
 | `data.processed_path` | Where the cleaned dataset is written |
 | `data.target` | Target column |
+| `data.separator` | CSV delimiter, defaults to `,` |
+| `data.target_mapping` | Optional label → integer map, e.g. `"yes": 1`. Quote the keys — YAML reads bare `yes`/`no` as booleans |
 | `features.numerical` / `features.categorical` | Feature columns by type |
 | `split.test_size` | Test fraction, between 0 and 1 |
+| `split.strategy` | `random` (default, stratified for classification) or `temporal`, which holds out the last rows in file order |
 | `model.task` | `classification` or `regression` |
 | `model.type` | Model family (`xgboost` ships with the template) |
 | `model.output_path` | Where the fitted pipeline is saved |
@@ -73,9 +77,14 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `validation.value_ranges` | Optional per-column `min`/`max` bounds |
 | `validation.report_dir` | Where data-quality reports are written |
 
-Relative paths resolve against the project root. To run against a different config, pass
-`--config path/to/config.yaml` or export `ML_CONFIG_PATH` in your shell. The template does not load
-`.env` files — `.env.example` documents the variables, it is not read at runtime.
+Relative paths resolve against **the directory you run from**, so run the commands from the project
+root. That keeps a copied project pointing at its own data no matter where the package is installed
+— deriving paths from the package location breaks under a non-editable install, where they would
+point inside `site-packages`. To run from elsewhere, export `ML_PROJECT_ROOT`.
+
+To run against a different config, pass `--config path/to/config.yaml` or export `ML_CONFIG_PATH`.
+The template does not load `.env` files — `.env.example` documents the variables, it is not read at
+runtime.
 
 ## Adding data
 
@@ -136,7 +145,8 @@ Metrics are computed by `ml_template/evaluate.py` and printed at the end of trai
 appends a timestamped JSON file to `experiments/results/` containing the metrics, model type,
 parameters and row counts.
 
-- Classification: `accuracy`, `precision`, `recall`, `f1`, `roc_auc` (binary targets only)
+- Classification: `accuracy`, `precision`, `recall`, `f1`, and for binary targets `roc_auc` and
+  `average_precision` (PR-AUC — prefer it on imbalanced data, where ROC-AUC's 0.5 baseline flatters)
 - Regression: `mae`, `rmse`, `r2`
 
 Asking for a metric that does not exist for the configured task fails with a clear error rather than

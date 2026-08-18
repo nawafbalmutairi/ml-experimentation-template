@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
+PROJECT_ROOT_ENV = "ML_PROJECT_ROOT"
+CONFIG_PATH_ENV = "ML_CONFIG_PATH"
 
 CLASSIFICATION = "classification"
 REGRESSION = "regression"
 SUPPORTED_TASKS = (CLASSIFICATION, REGRESSION)
+
+RANDOM_SPLIT = "random"
+TEMPORAL_SPLIT = "temporal"
+SUPPORTED_SPLIT_STRATEGIES = (RANDOM_SPLIT, TEMPORAL_SPLIT)
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,8 @@ class DataConfig:
     raw_path: Path
     processed_path: Path
     target: str
+    separator: str = ","
+    target_mapping: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -35,6 +41,7 @@ class FeatureConfig:
 @dataclass(frozen=True)
 class SplitConfig:
     test_size: float
+    strategy: str = RANDOM_SPLIT
 
 
 @dataclass(frozen=True)
@@ -78,14 +85,26 @@ class Config:
     validation: ValidationConfig
 
 
+def project_root() -> Path:
+    """Directory that relative paths in the config resolve against.
+
+    The working directory, so a copied project always resolves its own data regardless of where
+    the package itself is installed. Deriving this from the package location breaks as soon as the
+    package is installed non-editable, when it would point inside site-packages. Set
+    ML_PROJECT_ROOT to run from somewhere other than the project directory.
+    """
+    configured = os.environ.get(PROJECT_ROOT_ENV)
+    return Path(configured).resolve() if configured else Path.cwd()
+
+
 def default_config_path() -> Path:
-    configured = os.environ.get("ML_CONFIG_PATH")
-    return resolve_path(configured) if configured else DEFAULT_CONFIG_PATH
+    configured = os.environ.get(CONFIG_PATH_ENV)
+    return resolve_path(configured) if configured else project_root() / "config" / "config.yaml"
 
 
 def resolve_path(value: str) -> Path:
     path = Path(value)
-    return path if path.is_absolute() else PROJECT_ROOT / path
+    return path if path.is_absolute() else project_root() / path
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -118,18 +137,27 @@ def _build_config(raw: dict[str, Any]) -> Config:
     if not 0.0 < test_size < 1.0:
         raise ValueError(f"split.test_size must be between 0 and 1, got {test_size}")
 
+    strategy = str(split.get("strategy", RANDOM_SPLIT))
+    if strategy not in SUPPORTED_SPLIT_STRATEGIES:
+        raise ValueError(
+            f"Unsupported split.strategy '{strategy}'. "
+            f"Supported: {list(SUPPORTED_SPLIT_STRATEGIES)}"
+        )
+
     return Config(
         seed=int(raw["seed"]),
         data=DataConfig(
             raw_path=resolve_path(data["raw_path"]),
             processed_path=resolve_path(data["processed_path"]),
             target=str(data["target"]),
+            separator=str(data.get("separator", ",")),
+            target_mapping=_build_target_mapping(data.get("target_mapping") or {}),
         ),
         features=FeatureConfig(
             numerical=list(features["numerical"]),
             categorical=list(features["categorical"]),
         ),
-        split=SplitConfig(test_size=test_size),
+        split=SplitConfig(test_size=test_size, strategy=strategy),
         model=ModelConfig(
             task=task,
             type=str(model["type"]),
@@ -157,6 +185,16 @@ def _build_validation_config(validation: dict[str, Any]) -> ValidationConfig:
         report_dir=resolve_path(validation["report_dir"]),
         value_ranges=_build_value_ranges(validation.get("value_ranges") or {}),
     )
+
+
+def _build_target_mapping(raw_mapping: dict[Any, Any]) -> dict[str, int]:
+    boolean_keys = [label for label in raw_mapping if isinstance(label, bool)]
+    if boolean_keys:
+        raise ValueError(
+            "data.target_mapping keys must be quoted: YAML reads yes, no, true and false as "
+            "booleans, so write 'yes': 1 rather than yes: 1"
+        )
+    return {str(label): int(code) for label, code in raw_mapping.items()}
 
 
 def _fraction(validation: dict[str, Any], name: str) -> float:

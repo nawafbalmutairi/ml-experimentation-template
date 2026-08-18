@@ -27,6 +27,18 @@ def test_classification_metrics_on_perfect_predictions() -> None:
     assert metrics["accuracy"] == pytest.approx(1.0)
     assert metrics["f1"] == pytest.approx(1.0)
     assert metrics["roc_auc"] == pytest.approx(1.0)
+    assert metrics["average_precision"] == pytest.approx(1.0)
+
+
+def test_average_precision_tracks_the_positive_rate_on_random_scores() -> None:
+    """Unlike ROC-AUC, the PR-AUC baseline is the positive rate, which is why it is reported."""
+    target = pd.Series([1] + [0] * 9)
+    tied_scores = np.full(10, 0.5)
+
+    metrics = classification_metrics(target, np.zeros(10, dtype=int), tied_scores)
+
+    assert metrics["average_precision"] == pytest.approx(0.1)
+    assert metrics["roc_auc"] == pytest.approx(0.5)
 
 
 def test_classification_metrics_distinguish_precision_from_recall() -> None:
@@ -77,12 +89,25 @@ def test_classification_metrics_average_over_classes_when_not_binary() -> None:
     assert "roc_auc" not in metrics
 
 
-def test_classification_metrics_omit_roc_auc_without_probabilities() -> None:
+def test_binary_labels_use_numeric_order_not_text_order() -> None:
+    """Text order would sort {2, 10} as [10, 2] and score 2 as the positive class."""
+    target = pd.Series([2, 10, 2, 10])
+    predictions = np.array([2, 10, 2, 10])
+
+    metrics = classification_metrics(target, predictions, np.array([0.1, 0.9, 0.2, 0.8]))
+
+    assert metrics["precision"] == pytest.approx(1.0)
+    assert metrics["recall"] == pytest.approx(1.0)
+    assert metrics["roc_auc"] == pytest.approx(1.0)
+
+
+def test_classification_metrics_omit_ranking_metrics_without_probabilities() -> None:
     target = pd.Series([0, 1])
 
     metrics = classification_metrics(target, np.array([0, 1]), None)
 
     assert "roc_auc" not in metrics
+    assert "average_precision" not in metrics
 
 
 def test_regression_metrics_measure_error() -> None:

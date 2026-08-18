@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     f1_score,
     mean_absolute_error,
     mean_squared_error,
@@ -56,8 +57,10 @@ def classification_metrics(
     """Metrics for any label type.
 
     Binary targets are compared against the highest label, which matches the column
-    `predict_proba` returns second and the class scikit-learn treats as positive. Targets with
-    more than two classes are averaged with `macro`, weighting every class equally.
+    `predict_proba` returns second and the class scikit-learn treats as positive. Labels are
+    ordered numerically, not textually: text order would make 2 the positive class in a {2, 10}
+    target. Targets with more than two classes are averaged with `macro`, weighting every class
+    equally.
     """
     labels = sorted(pd.unique(target))
     is_binary = len(labels) == 2
@@ -77,6 +80,9 @@ def classification_metrics(
     }
     if probabilities is not None and is_binary:
         metrics["roc_auc"] = float(roc_auc_score(actual, probabilities))
+        # Precision-recall AUC. On imbalanced targets this is far more informative than ROC-AUC,
+        # whose baseline is 0.5 regardless of how rare the positive class is.
+        metrics["average_precision"] = float(average_precision_score(actual, probabilities))
     return metrics
 
 

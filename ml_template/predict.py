@@ -29,7 +29,7 @@ def predict(
 
 def run_prediction(config: Config, input_path: Path, output_path: Path) -> pd.DataFrame:
     pipeline = load_pipeline(config.model.output_path)
-    frame = load_dataset(input_path)
+    frame = load_dataset(input_path, config.data.separator)
     predicted = predict(pipeline, frame, config.features.all_features)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

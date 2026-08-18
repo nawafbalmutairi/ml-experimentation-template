@@ -5,11 +5,18 @@ import json
 from pathlib import Path
 
 import joblib
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-from ml_template.config import CLASSIFICATION, Config, default_config_path, load_config
-from ml_template.data_processor import clean_dataset, load_dataset, save_dataset
+from ml_template.config import (
+    CLASSIFICATION,
+    TEMPORAL_SPLIT,
+    Config,
+    default_config_path,
+    load_config,
+)
+from ml_template.data_processor import clean_dataset, encode_target, load_dataset, save_dataset
 from ml_template.data_validator import (
     PROCESSED_STAGE,
     RAW_STAGE,
@@ -35,6 +42,34 @@ def save_pipeline(pipeline: Pipeline, path: Path) -> None:
     joblib.dump(pipeline, path)
 
 
+def split_train_test(
+    features: pd.DataFrame, target: pd.Series, config: Config
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Hold out a test set, either at random or by taking the most recent rows.
+
+    The temporal strategy assumes the dataset is already in chronological order and keeps that
+    order, so the model is only ever fitted on rows that precede the ones it is scored on. It
+    cannot stratify: forcing the class balance would mean reaching into the future.
+    """
+    if config.split.strategy == TEMPORAL_SPLIT:
+        train_rows = len(features) - round(len(features) * config.split.test_size)
+        return (
+            features.iloc[:train_rows],
+            features.iloc[train_rows:],
+            target.iloc[:train_rows],
+            target.iloc[train_rows:],
+        )
+
+    features_train, features_test, target_train, target_test = train_test_split(
+        features,
+        target,
+        test_size=config.split.test_size,
+        random_state=config.seed,
+        stratify=target if config.model.task == CLASSIFICATION else None,
+    )
+    return features_train, features_test, target_train, target_test
+
+
 def quality_error(report: ValidationReport, report_path: Path) -> DataQualityError:
     details = "\n".join(f"- {issue.check}: {issue.message}" for issue in report.errors)
     return DataQualityError(
@@ -44,7 +79,8 @@ def quality_error(report: ValidationReport, report_path: Path) -> DataQualityErr
 
 
 def run_training(config: Config) -> dict[str, float]:
-    raw = load_dataset(config.data.raw_path)
+    raw = load_dataset(config.data.raw_path, config.data.separator)
+    raw = encode_target(raw, config.data.target, config.data.target_mapping)
     raw_report = validate_dataset(raw, config, RAW_STAGE)
     if raw_report.has_error(SCHEMA_CHECK):
         raise quality_error(raw_report, write_quality_report([raw_report], config.validation))
@@ -62,12 +98,8 @@ def run_training(config: Config) -> dict[str, float]:
     features, target = split_features_and_target(
         cleaned, config.features.all_features, config.data.target
     )
-    features_train, features_test, target_train, target_test = train_test_split(
-        features,
-        target,
-        test_size=config.split.test_size,
-        random_state=config.seed,
-        stratify=target if config.model.task == CLASSIFICATION else None,
+    features_train, features_test, target_train, target_test = split_train_test(
+        features, target, config
     )
 
     pipeline = build_pipeline(config)
@@ -83,6 +115,7 @@ def run_training(config: Config) -> dict[str, float]:
             "model_type": config.model.type,
             "task": config.model.task,
             "params": config.model.params,
+            "split_strategy": config.split.strategy,
             "train_rows": len(features_train),
             "test_rows": len(features_test),
         },

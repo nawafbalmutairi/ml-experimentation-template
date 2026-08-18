@@ -7,11 +7,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ml_template.config import Config, ValueRange
+from ml_template.config import TEMPORAL_SPLIT, Config, ValueRange
 from ml_template.data_processor import save_dataset
 from ml_template.data_validator import DataQualityError
+from ml_template.feature_engineer import split_features_and_target
 from ml_template.predict import load_pipeline, predict, run_prediction
-from ml_template.train import run_training
+from ml_template.train import run_training, split_train_test
 
 
 def train_on(config: Config, frame: pd.DataFrame) -> dict[str, float]:
@@ -76,6 +77,71 @@ def test_prediction_writes_a_csv_with_the_original_columns(
     written = pd.read_csv(output_path)
     assert len(written) == 10
     assert "prediction" in written.columns
+
+
+def temporal(config: Config) -> Config:
+    return replace(config, split=replace(config.split, strategy=TEMPORAL_SPLIT))
+
+
+def test_temporal_split_holds_out_the_last_rows_in_order(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    features, target = split_features_and_target(
+        training_frame, config.features.all_features, config.data.target
+    )
+
+    features_train, features_test, _, target_test = split_train_test(
+        features, target, temporal(config)
+    )
+
+    assert len(features_test) == 30
+    assert len(features_train) == 90
+    assert features_test.index.tolist() == list(range(90, 120))
+    assert features_train.index.tolist() == list(range(90))
+    assert target_test.index.tolist() == features_test.index.tolist()
+
+
+def test_temporal_split_does_not_reorder_or_overlap(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    features, target = split_features_and_target(
+        training_frame, config.features.all_features, config.data.target
+    )
+
+    features_train, features_test, _, _ = split_train_test(features, target, temporal(config))
+
+    assert set(features_train.index).isdisjoint(features_test.index)
+    assert max(features_train.index) < min(features_test.index)
+    assert features_test["tenure_months"].tolist() == (
+        training_frame["tenure_months"].iloc[90:].tolist()
+    )
+
+
+def test_random_split_shuffles_rather_than_taking_the_tail(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    features, target = split_features_and_target(
+        training_frame, config.features.all_features, config.data.target
+    )
+
+    _, features_test, _, _ = split_train_test(features, target, config)
+
+    assert features_test.index.tolist() != list(range(90, 120))
+
+
+def test_temporal_training_records_the_strategy_it_used(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    metrics = train_on(temporal(config), training_frame)
+
+    assert set(metrics) == set(config.evaluation.metrics)
+
+    payload = json.loads(
+        next(config.evaluation.results_dir.glob("metrics-*.json")).read_text(encoding="utf-8")
+    )
+    assert payload["split_strategy"] == TEMPORAL_SPLIT
+    assert payload["train_rows"] == 90
+    assert payload["test_rows"] == 30
 
 
 def quality_reports(config: Config) -> list[Path]:

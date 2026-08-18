@@ -9,16 +9,35 @@ import pandas as pd
 from ml_template.config import ValueRange
 
 
-def load_dataset(path: Path) -> pd.DataFrame:
+def load_dataset(path: Path, separator: str = ",") -> pd.DataFrame:
     if not path.is_file():
         raise FileNotFoundError(f"Dataset not found: {path}")
-    return pd.read_csv(path)
+    return pd.read_csv(path, sep=separator)
 
 
 def validate_columns(frame: pd.DataFrame, required_columns: Sequence[str]) -> None:
     missing = [column for column in required_columns if column not in frame.columns]
     if missing:
         raise ValueError(f"Dataset is missing required columns: {missing}")
+
+
+def encode_target(frame: pd.DataFrame, target: str, mapping: dict[str, int]) -> pd.DataFrame:
+    """Replace class labels with the integers the estimator expects.
+
+    Unmapped labels are an error rather than a silent NaN, which cleaning would drop as a
+    missing target and quietly shrink the dataset.
+    """
+    if not mapping:
+        return frame
+
+    validate_columns(frame, [target])
+    unmapped = set(frame[target].dropna().unique()) - set(mapping)
+    if unmapped:
+        raise ValueError(
+            f"data.target_mapping has no entry for labels {sorted(unmapped, key=repr)} "
+            f"in column '{target}'"
+        )
+    return frame.assign(**{target: frame[target].map(mapping)})
 
 
 def drop_rows_with_missing_target(frame: pd.DataFrame, target: str) -> pd.DataFrame:

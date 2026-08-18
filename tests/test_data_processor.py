@@ -10,6 +10,7 @@ from ml_template.config import ValueRange
 from ml_template.data_processor import (
     clean_dataset,
     drop_rows_with_invalid_values,
+    encode_target,
     load_dataset,
     save_dataset,
     validate_columns,
@@ -32,6 +33,37 @@ def test_load_dataset_reads_csv(tmp_path: Path) -> None:
 def test_load_dataset_reports_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_dataset(tmp_path / "absent.csv")
+
+
+def test_load_dataset_honours_a_custom_separator(tmp_path: Path) -> None:
+    path = tmp_path / "data.csv"
+    path.write_text('"age";"label"\n30;"yes"\n40;"no"\n', encoding="utf-8")
+
+    frame = load_dataset(path, separator=";")
+
+    assert list(frame.columns) == ["age", "label"]
+    assert frame["age"].tolist() == [30, 40]
+
+
+def test_encode_target_replaces_labels_with_integers() -> None:
+    frame = pd.DataFrame({"age": [30, 40], TARGET: ["yes", "no"]})
+
+    encoded = encode_target(frame, TARGET, {"no": 0, "yes": 1})
+
+    assert encoded[TARGET].tolist() == [1, 0]
+
+
+def test_encode_target_leaves_the_frame_alone_without_a_mapping() -> None:
+    frame = pd.DataFrame({TARGET: ["yes", "no"]})
+
+    assert encode_target(frame, TARGET, {}).equals(frame)
+
+
+def test_encode_target_rejects_labels_the_mapping_does_not_cover() -> None:
+    frame = pd.DataFrame({TARGET: ["yes", "no", "maybe"]})
+
+    with pytest.raises(ValueError, match="maybe"):
+        encode_target(frame, TARGET, {"no": 0, "yes": 1})
 
 
 def test_validate_columns_lists_every_missing_column() -> None:
