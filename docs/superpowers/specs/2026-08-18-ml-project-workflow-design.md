@@ -1,33 +1,31 @@
 # ML project workflow — design
 
 Date: 2026-08-18
-Status: proposed, awaiting review
+Status: implemented as `.claude/skills/ml-project/SKILL.md`. Two rules verified against baselines,
+the checkpoint rule reworded after testing, one criterion still untested.
 
 ## Problem
 
-This repository works well for one dataset at a time, but nothing defines how the *next* dataset
-starts. Two failure modes follow from that gap:
+This repository works well for one dataset at a time, but nothing defined how the *next* dataset
+starts. Two failure modes follow:
 
-1. **Project drift.** Without a rule, project #9 gets copied from project #8, which was copied from
-   #7. Each copy carries the previous problem's configs, reports and half-finished ideas.
-2. **Process amnesia.** The care taken on a dataset — profiling before modelling, catching the
-   `duration` leak, noticing the temporal drift — lives only in a conversation. A fresh session six
-   months from now has none of it, and will happily jump straight to a model.
-
-The code is in good shape. The repeatability around it is not.
+1. **Project drift.** Without a rule, project #9 gets copied from #8, which was copied from #7. Each
+   copy carries the previous problem's configs, reports and half-finished ideas.
+2. **Process amnesia.** The care taken on a dataset — profiling before modelling, catching a leaking
+   column, noticing temporal drift — lives only in a conversation. A fresh session months later has
+   none of it.
 
 ## Decisions
 
 ### D1 — The repository is a reference; every project copies it
 
-`ml-experimentation-template` is **#0**: the canonical framework. Each dataset gets its own copy of
-#0. A project is **never** copied from another project. Project #9 and project #2 begin from the
-same base; the only differences between them are the ones the data demanded.
+`ml-experimentation-template` is **#0**. Each dataset gets its own copy of #0. A project is **never**
+copied from another project, so project #9 and project #2 begin from the same base and differ only
+where the data demanded it.
 
 ### D2 — #0 is a skeleton, not a toolkit
 
-#0 contains the machinery, not a menu of every technique. No speculative clustering support, no
-model zoo sitting unused. Capabilities arrive when a real dataset needs one.
+The machinery, not a menu of techniques. Capabilities arrive when a real dataset needs one.
 
 ### D3 — The workflow lives in a skill
 
@@ -36,119 +34,130 @@ travels with every copy.
 
 ### D4 — Claude runs the process; the user makes the decisions
 
-The skill governs **when Claude must stop and ask**. It does not choose the problem type, the split,
-the model, or the threshold. Every fork ends with the user's decision.
+Claude supplies findings, options and a recommendation. The user chooses.
 
 ### D5 — Backporting is the only path between projects
 
-Nothing flows sideways. A capability built in project #3 reaches project #4 only by being pushed
-back into #0 first. This makes step 8 load-bearing rather than optional.
+Nothing flows sideways. A capability built in project #3 reaches project #4 only by going back into
+#0 first.
 
 ## Skeleton contents
 
 | Kept in #0 | Reason |
 | --- | --- |
-| `ml_template/` — config, data_processor, data_validator, feature_engineer, model, train, evaluate, predict | The engine |
+| `ml_template/` | The engine |
 | `config/config.yaml`, `data/raw/sample.csv` | A fresh copy runs immediately; CI has something to exercise |
 | `tests/`, `scripts/verify.py`, `.github/workflows/ci.yml` | The quality floor every copy inherits |
 | `scripts/lift_analysis.py` | Generic decile lift for any binary ranking problem |
+| `.claude/skills/ml-project/` | The workflow |
 | `docs/superpowers/specs/` | Design decisions, including this one |
 
-No project-specific config, report or dataset is ever committed to #0.
+No project-specific config, report or dataset is committed to #0.
 
 ## Copy procedure
 
-No tooling. Copying a directory is not a problem that needs a script; one is justified only if this
-becomes painful in practice.
-
 1. Confirm #0 is green: `python scripts/verify.py` passes.
-2. Copy #0 to a new directory named for the project.
+2. Copy #0 to a directory named for the project.
 3. Delete `.git`, run `git init`.
 4. Drop the dataset into `data/raw/`.
 5. Confirm the copy is green before touching anything.
 
-Step 1 is a precondition, not a formality: a copy inherits whatever state #0 is in, so #0 is never
-left broken.
+Step 1 is a precondition: a copy inherits whatever state #0 is in.
 
 ## The workflow
 
-Eight steps. The stop column marks where Claude presents options and waits for a decision.
+Every stage delivers the same three parts — **what I found**, **the options**, **my recommendation
+and why** — then the decision belongs to the user.
 
-| Step | Claude produces | Stop |
+| Step | Contents | Decision |
 | --- | --- | --- |
-| 0. Intake | The goal restated in business terms: what decision does this model serve, and what does acting on it cost? | confirm |
-| 1. Profile | The findings report (below) | findings and gaps |
-| 2. Framing | Classification, regression or clustering, with reasoning from the profile | **user decides** |
-| 3. Split | Random, stratified, chronological, hold-out validation or cross-validation, recommended from the profile | **user decides** |
-| 4. Features | Columns in, columns out and why, sentinel and missing-value handling | **user decides** |
-| 5. Model | A baseline first, then a candidate family and parameters | **user decides** |
-| 6. Train and evaluate | Metrics, the baseline beside them, and a business-relevant framing (lift, or error in real units) | good enough? |
-| 7. Report | `reports/<project>.md`: decisions, evidence, limitations | review |
-| 8. Backport | What is generic, and a proposal to move it into #0 | confirm |
+| 0. Intake | Business objective · **prediction point** · constraints | confirm |
+| 1. Profile | Facts · Observations · Risks · Unknowns | review |
+| 2. Framing | Classification / regression / clustering · alternatives + reasoning | **user decides** |
+| 3. Split | Random / stratified / temporal / validation / CV · leakage implications | **user decides** |
+| 4. Features | Keep / Drop / Transform / Create · leakage check against the prediction point | **user decides** |
+| 5. Model | Baseline · candidates · trade-offs | **user decides** |
+| 6. Train + evaluate | Metrics · baseline comparison · error analysis · business impact | review |
+| 7. Report | Decisions · evidence · results · limitations, written to a file | review |
+| 8. Backport | Generic capability? | confirm |
 
-### Step 1 profile — required contents
+### Stopping is conditional; surfacing is not
 
-The report is not a `df.describe()` dump. It must cover:
+If the user is reachable, stop after each stage and wait. If they have said they are away, proceed
+under a stated assumption rather than stalling, name the rejected alternative, and carry both into
+the report. **A choice made silently is the failure; a choice made without waiting is not.**
 
-- Shape, dtypes, memory
-- Missingness per column, **including sentinel values** (`unknown`, `-1`, `9999`, empty string)
-- Duplicate rows, and whether duplicates disagree on the target
-- Target: distribution and class balance, or range and skew for regression
-- Categorical cardinality, flagging any column that would explode under one-hot encoding
-- Numeric ranges, and whether extremes are errors or real
-- **Time**: any date column, whether rows are chronologically ordered, and whether the target drifts
-  across that order
-- **Leakage suspects**: columns knowable only after the outcome, identifiers, and anything
-  suspiciously predictive
-- What is missing that the stated goal needs
+### Iteration
 
-### Step 6 — baseline is mandatory
+Error analysis at step 6 routinely sends work back to features or model. That is expected. Say that
+you are going back, and record how many passes it took.
 
-Every model is reported next to a trivial baseline: majority class for classification, mean or
-median for regression. A model that does not beat it is reported as not beating it.
+### Test-set discipline
 
-## What the skill binds Claude to
+Tune against validation data. Open the test set once, at the end. Iterating against the test set
+tunes on it, and the final number stops meaning anything.
 
-1. Profile before proposing a model. No reaching for the previous project's algorithm.
-2. Stop at every checkpoint with real options, a recommendation, and the reasoning.
-3. Always report a baseline comparison.
-4. Check leakage explicitly at step 1 and again at step 4.
-5. Name judgement calls out loud, including small ones.
-6. Report weak results as weak, and say when a number is not trustworthy.
-7. State when the skeleton lacks a capability the data needs, rather than working around it silently.
+### Prediction point
+
+State at intake the moment the prediction is made and what is known then. Every feature at step 4 is
+checked against it. A column recorded during or after the outcome fails the check regardless of how
+predictive it is.
+
+## Evidence
+
+The skill was written against observed behaviour rather than assumption. Four agents were given the
+same bank marketing dataset, varying two things: whether the skill was present, and whether the user
+was described as available.
+
+| | Gagged ("cannot answer questions") | Invited ("I'm available") |
+| --- | --- | --- |
+| **No skill** | Ran to completion · no report file · no backport log · edited framework tests silently | Stopped and asked |
+| **With skill** | Ran to completion · report file written · backport log written · framework change logged | Stopped and asked |
+
+What this established:
+
+- **Both structural rules earn their place.** Report-to-file and the backport log: 0 of 2 without the
+  skill, 1 of 1 with it under identical pressure.
+- **The checkpoints are not what causes stopping.** Both invited agents stopped with and without the
+  skill. Stopping tracks the invitation, so the original absolute rule was reworded to the
+  conditional above.
+- **Most good ML practice needs no enforcement.** Every agent, with or without the skill, dropped the
+  leaking column, detected the chronological ordering and chose a temporal split. Rules for behaviour
+  that already happens would be bloat.
+- **Two competent agents produce different models.** Different feature sets, different results, both
+  defensible — which is the argument for surfacing decisions rather than for policing technique.
+
+Testing also found three real defects in #0: a test that ignored the configured separator, `predict`
+returning labels without scores, and the absence of a validation split. The first two are fixed.
 
 ## Out of scope, deliberately
 
-Clustering, cross-validation, three-way train/validation/test splits, additional model families,
-date-part extraction, high-cardinality encoding, hyperparameter search, calibration, feature
-importance output.
+Clustering, cross-validation, three-way splits, additional model families, date-part extraction,
+high-cardinality encoding, hyperparameter search, calibration, feature importance output.
 
-Each is built when a dataset needs it, in that project, then backported if generic. Date handling
-and a cardinality guard are the most likely first backports, since most real tables contain a date
-column and at least one high-cardinality identifier.
+Two candidates now have evidence behind them, having been hit during testing:
+
+- `split.validation_size`, to carve a validation slice from the training portion.
+- `data.sentinels`, to declare values like `pdays = -1` so they become missing before validation.
 
 ## Verification
 
-The skill is prose and has no unit tests. Acceptance is behavioural:
-
-1. #0 stays green: `scripts/verify.py` passes after the skill is added.
+1. #0 stays green: `scripts/verify.py` passes.
 2. A fresh copy of #0 trains on `sample.csv` unchanged.
-3. A dry run of the skill against `sample.csv` stops at every checkpoint and produces a profile
-   report before any model is proposed.
+3. **Untested:** whether the skill is discovered automatically. Every test named the skill file
+   explicitly, so discovery via the description field has not been exercised.
 
 ## Risks and trade-offs
 
 | Risk | Assessment |
 | --- | --- |
-| Copies drift apart | Accepted; inherent to the model chosen. D5 is the mitigation and depends on discipline |
+| Copies drift apart | Accepted; inherent to the model. D5 is the mitigation and depends on discipline |
 | The skill guarantees the checkpoint, not the judgement | It makes Claude stop and ask; it does not make the recommendation correct |
-| #0 has no worked example any more | The reasoning lives in project repos instead. Accepted to keep #0 clean |
-| Skeleton gaps surface mid-project | Expected. Binding rule 7 requires naming the gap rather than hacking around it |
-| Checkpoint fatigue | Eight stops may feel heavy on a simple dataset. If so, merge steps 4 and 5 rather than skipping them silently |
+| #0 has no worked example | The reasoning lives in project repos instead. Accepted to keep #0 clean |
+| Skeleton gaps surface mid-project | Expected. The backport log turns them into recorded findings rather than silent workarounds |
+| Evidence is one run per cell | Directional, not conclusive. Re-test when a rule looks wrong in practice |
 
 ## Open questions
 
-1. **Where do project copies live?** Sibling directories, or their own GitHub repositories? This
-   affects nothing in the design but should be settled before project #1.
-2. **Do project repos get remotes?** #0 is public; a project containing client data may not want to
-   be.
+1. **Where do project copies live?** Sibling directories, or their own repositories?
+2. **Do project repos get remotes?** #0 is public; a project containing client data may not be.

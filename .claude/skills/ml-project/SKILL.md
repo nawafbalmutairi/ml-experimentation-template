@@ -8,8 +8,16 @@ description: Use when working on a dataset or ML problem - profiling data, choos
 ## Overview
 
 Work one stage at a time. Each stage ends with a recommendation and a decision that belongs to the
-user. Claude supplies analysis and options; the user chooses. Never carry two stages at once, and
-never decide a stage silently because the answer seems obvious.
+user. Claude supplies analysis and options; the user chooses.
+
+**Surfacing a decision is never optional. Waiting for it depends on whether the user can answer.**
+
+- If the user is reachable, stop after each stage and wait.
+- If the user has said they are away or cannot answer, keep going rather than stalling: state the
+  assumption you are proceeding on, name the alternative you rejected, and carry both into the
+  report so the decision is still theirs to revisit.
+
+A choice made silently is the failure, not a choice made without waiting.
 
 ## Every stage delivers the same three parts
 
@@ -67,7 +75,8 @@ back, and record how many passes it took - the report states this.
 
 ## Common mistakes
 
-- Answering two stages in one message, which removes the decision.
+- Running stages together while the user is available, which takes decisions away from them.
+- Stalling for an answer from someone who has said they are unreachable.
 - Recommending without giving the alternatives that were rejected.
 - Profiling with `describe()` and calling it a profile.
 - Leaving a capability gap silent: if the framework cannot do what the data needs, say so.
