@@ -17,7 +17,7 @@ import pandas as pd
 from ml_template.config import Config, default_config_path, load_config
 from ml_template.data_processor import clean_dataset, encode_target, load_dataset
 from ml_template.feature_engineer import split_features_and_target
-from ml_template.predict import load_pipeline
+from ml_template.predict import load_pipeline, positive_class_scores
 from ml_template.train import split_train_test
 
 DECILES = 10
@@ -36,7 +36,10 @@ def held_out_scores(config: Config) -> pd.DataFrame:
     _, features_test, _, target_test = split_train_test(features, target, config)
 
     pipeline = load_pipeline(config.model.output_path)
-    scores = pipeline.predict_proba(features_test)[:, 1]
+    scores = positive_class_scores(pipeline, features_test)
+    if scores is None:
+        raise SystemExit("Lift needs a binary classifier that can produce probabilities.")
+
     return pd.DataFrame({"score": scores, "actual": target_test.to_numpy()}).sort_values(
         "score", ascending=False, ignore_index=True
     )

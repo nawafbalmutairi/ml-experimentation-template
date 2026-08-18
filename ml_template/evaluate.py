@@ -22,6 +22,7 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 
 from ml_template.config import CLASSIFICATION, REGRESSION, EvaluationConfig
+from ml_template.predict import positive_class_scores
 
 
 def evaluate_model(
@@ -34,7 +35,7 @@ def evaluate_model(
     predictions = pipeline.predict(features)
 
     if task == CLASSIFICATION:
-        probabilities = _positive_class_probabilities(pipeline, features)
+        probabilities = positive_class_scores(pipeline, features)
         available = classification_metrics(target, predictions, probabilities)
     elif task == REGRESSION:
         available = regression_metrics(target, predictions)
@@ -105,12 +106,3 @@ def save_metrics(
     payload = {"timestamp": timestamp.isoformat(), **context, "metrics": metrics}
     output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return output_path
-
-
-def _positive_class_probabilities(pipeline: Pipeline, features: pd.DataFrame) -> np.ndarray | None:
-    if not hasattr(pipeline, "predict_proba"):
-        return None
-    probabilities = pipeline.predict_proba(features)
-    if probabilities.shape[1] != 2:
-        return None
-    return np.asarray(probabilities[:, 1])

@@ -64,6 +64,47 @@ def test_saved_pipeline_predicts_after_reloading(
     assert set(predicted["prediction"]).issubset({0, 1})
 
 
+def test_prediction_scores_rank_clients_for_targeting(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """A label cannot say who to contact first; the score is what a call list is sorted on."""
+    train_on(config, training_frame)
+    pipeline = load_pipeline(config.model.output_path)
+    unseen = training_frame.drop(columns=[config.data.target])
+
+    predicted = predict(pipeline, unseen, config.features.all_features)
+
+    assert "score" in predicted.columns
+    assert predicted["score"].between(0.0, 1.0).all()
+    # The score has to agree with the label, or ranking by it would contradict the model.
+    assert predicted.loc[predicted["prediction"] == 1, "score"].min() > 0.5
+    assert predicted.loc[predicted["prediction"] == 0, "score"].max() <= 0.5
+    assert predicted["score"].nunique() > 1
+
+
+def test_regression_predictions_have_no_score_column(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    regression_config = replace(
+        config,
+        data=replace(config.data, target="monthly_charges"),
+        features=replace(config.features, numerical=["tenure_months"]),
+        model=replace(config.model, task="regression"),
+        evaluation=replace(config.evaluation, metrics=["mae"]),
+    )
+    train_on(regression_config, training_frame)
+    pipeline = load_pipeline(regression_config.model.output_path)
+
+    predicted = predict(
+        pipeline,
+        training_frame.drop(columns=["monthly_charges"]),
+        regression_config.features.all_features,
+    )
+
+    assert "score" not in predicted.columns
+    assert "prediction" in predicted.columns
+
+
 def test_prediction_writes_a_csv_with_the_original_columns(
     config: Config, training_frame: pd.DataFrame
 ) -> None:

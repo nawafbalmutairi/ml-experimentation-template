@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
@@ -19,12 +20,35 @@ def load_pipeline(path: Path) -> Pipeline:
     return pipeline
 
 
+def positive_class_scores(pipeline: Pipeline, features: pd.DataFrame) -> np.ndarray | None:
+    """Probability of the positive class, or None when the model cannot produce one.
+
+    The positive class is the highest label, matching the column `predict_proba` returns second.
+    Only binary classification yields a score: regression already predicts the value, and a single
+    number cannot rank more than two classes.
+    """
+    if not hasattr(pipeline, "predict_proba"):
+        return None
+    probabilities = pipeline.predict_proba(features)
+    if probabilities.shape[1] != 2:
+        return None
+    return np.asarray(probabilities[:, 1])
+
+
 def predict(
     pipeline: Pipeline, frame: pd.DataFrame, feature_columns: Sequence[str]
 ) -> pd.DataFrame:
+    """Add a `prediction` column, and a `score` column whenever the model can rank.
+
+    Targeting and prioritisation need the score rather than the label: a hard yes/no cannot say
+    who to call first, and thresholding at 0.5 is a decision the caller should own.
+    """
     validate_columns(frame, feature_columns)
-    predictions = pipeline.predict(frame[list(feature_columns)])
-    return frame.assign(prediction=predictions)
+    features = frame[list(feature_columns)]
+    predicted = frame.assign(prediction=pipeline.predict(features))
+
+    scores = positive_class_scores(pipeline, features)
+    return predicted if scores is None else predicted.assign(score=scores)
 
 
 def run_prediction(config: Config, input_path: Path, output_path: Path) -> pd.DataFrame:

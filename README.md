@@ -162,6 +162,10 @@ The saved pipeline carries its own preprocessing, so inference applies exactly t
 learned during training. The input CSV needs the configured feature columns; the target column is
 not required.
 
+The output adds a `prediction` column, and for binary classification a `score` column holding the
+probability of the positive class. Sort by `score` to rank a list — targeting problems need the
+order, not the label, and where to cut the list is a budget decision rather than a modelling one.
+
 Prediction does not apply the quality gate: every input row gets a prediction, including rows that
 training would have dropped for falling outside `validation.value_ranges`. Such rows are scored by
 extrapolating well outside the training distribution, so screen them yourself if that matters.
