@@ -249,6 +249,18 @@ overstated a true holdout by 7.1 points against 3.8 for the fitted encoder.
 Note the second figure is not zero. Fitting per fold removes the leak, not cross-validation's own
 optimism.
 
+**Known limit: the rate covers every member of the group.** Sometimes only part of a group shares
+its fate. On the Titanic data, families lived or died together — but that held for women and
+children (0.723 survival, strongly group-determined) and not for adult men (0.160, largely
+independent). Every man in a family pulls its rate down while saying little about whether the women
+in it survived. A project that restricted the rate to women and children scored 1.2 points better
+on a real leaderboard than this encoder did, purely from that difference — 25 of 124 encoded rows
+differed, and the generic mean was 0.672 against 0.763.
+
+So this is the safe general form, not the best possible one. If your groups only partly share an
+outcome, compute the restricted rate in a project script and pass it as a plain numerical feature —
+accepting that you then own the leakage discipline yourself.
+
 ## Features the template does not create
 
 The pipeline selects and transforms columns that already exist; it does not derive new ones. When a

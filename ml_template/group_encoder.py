@@ -16,6 +16,13 @@ so this does it as a fitted transformer:
 Inside a `Pipeline`, that means a cross-validation fold learns rates from its training rows only,
 and a genuine holdout is scored from training rows only. Computing the same statistic over a whole
 dataset before splitting inflates every estimate that follows.
+
+The rate covers every member of the group, which is the safe general form and not always the most
+informative one. Where only part of a group shares its outcome, the rest dilute the signal: on the
+Titanic data, families determined the fate of women and children but not of adult men, and a
+project-specific rate restricted to the former beat this encoder by 1.2 points on the leaderboard.
+There is deliberately no filter parameter here — one project has wanted it, and the template adds a
+capability when two have.
 """
 
 from __future__ import annotations
