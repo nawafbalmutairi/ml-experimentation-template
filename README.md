@@ -65,7 +65,7 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `split.test_size` | Test fraction, between 0 and 1. Both strategies round the held-out count up, and refuse a split that leaves either half empty |
 | `split.strategy` | `random` (default, stratified for classification) or `temporal`, which holds out the last rows in file order |
 | `model.task` | `classification` or `regression` |
-| `model.type` | Model family (`xgboost` ships with the template) |
+| `model.type` | Model family: `xgboost`, or `logistic_regression` for classification |
 | `model.output_path` | Where the fitted pipeline is saved |
 | `model.params` | Hyperparameters passed straight to the model |
 | `evaluation.results_dir` | Where metric JSON files are written |
@@ -192,6 +192,19 @@ python scripts/verify.py
 
 It reports each gate separately and exits non-zero if any fail. `.github/workflows/ci.yml` runs this
 exact script on Python 3.10 and 3.12.
+
+## Features the template does not create
+
+The pipeline selects and transforms columns that already exist; it does not derive new ones. When a
+dataset's signal lives in a feature that has to be built — a title parsed out of a name, a family
+size summed from two columns, a flag for whether an optional field was filled in — write a project
+script that reads `data/raw/` and writes the derived columns to `data/processed/`, then point
+`data.raw_path` at that file.
+
+Keep such a script to **row-wise** transforms, where each output depends only on the row it came
+from. Those cannot leak, so running them before the split is safe. Anything that learns a statistic
+from other rows — imputing a column from its group's median, encoding a category by its target rate
+— must go inside the pipeline instead, or it will see the test split during training.
 
 ## Adapting to another problem
 
