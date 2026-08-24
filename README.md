@@ -31,6 +31,7 @@ reports/                         Write-ups you produce (tracked); figures and pr
 reports/data_quality/            Data-quality reports, one per training run
 scripts/verify.py                The one verification command (format, lint, types, tests)
 scripts/lift_analysis.py         Decile lift on the held-out set, for ranking problems
+scripts/cross_validate.py        Cross-validation, honouring the configured split strategy
 ```
 
 ## Installation
@@ -192,6 +193,32 @@ python scripts/verify.py
 
 It reports each gate separately and exits non-zero if any fail. `.github/workflows/ci.yml` runs this
 exact script on Python 3.10 and 3.12.
+
+## Cross-validation, and when not to trust it
+
+```bash
+python scripts/cross_validate.py --config config/config.yaml --folds 5 --repeats 1
+```
+
+It reports every metric in `evaluation.metrics` and honours `split.strategy`: a `temporal` config
+gets a rolling origin, where each fold trains only on rows preceding the ones it scores. Shuffling a
+temporal problem into random folds trains on the future to predict the past and reports a better
+number for doing it.
+
+**Read the output as fit to the training distribution, not as performance on new data.** Every fold
+resamples the same rows, so cross-validation cannot see any difference between the data you have and
+the data the model will meet. Where those differ — a small dataset, a shifting population, a
+competition holdout — it can be confidently wrong, and repeating it narrows the error bars around
+the wrong number rather than correcting it.
+
+That is not hypothetical. On a real project here it ranked two models backwards, preferring the one
+that went on to score 1.4 points *worse* on a genuine holdout, and it overestimated both by 5-7
+points. Repeating it across ten fold partitions raised confidence in the wrong answer.
+
+Two habits follow. Use it to separate models that differ a lot, not to choose between models that
+differ a little — a gap inside the fold-to-fold spread is unresolved, not decided. And prefer a
+genuine holdout whenever the data allows one; the single split that `train.py` performs is a weaker
+estimate but an honest one.
 
 ## Features the template does not create
 
