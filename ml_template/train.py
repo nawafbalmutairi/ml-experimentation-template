@@ -33,7 +33,9 @@ from ml_template.model import create_model
 
 
 def build_pipeline(config: Config) -> Pipeline:
-    preprocessor = build_preprocessor(config.features.numerical, config.features.categorical)
+    preprocessor = build_preprocessor(
+        config.features.numerical, config.features.categorical, config.features.group_keys
+    )
     model = create_model(config.model, config.seed)
     return Pipeline([("preprocessor", preprocessor), ("model", model)])
 

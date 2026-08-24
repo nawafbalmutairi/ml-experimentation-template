@@ -40,6 +40,11 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# scikit-learn's estimator API fixes these argument names. Renaming them would break the
+# contract that lets the transformer sit inside a Pipeline and a cross-validation loop.
+"ml_template/group_encoder.py" = ["N803"]
+
 [tool.mypy]
 files = ["ml_template", "tests", "scripts"]
 disallow_untyped_defs = true

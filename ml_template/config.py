@@ -32,10 +32,13 @@ class DataConfig:
 class FeatureConfig:
     numerical: list[str]
     categorical: list[str]
+    # Columns naming a group whose members tend to share an outcome - a household, a ticket, an
+    # order. Encoded by the group's target rate rather than used raw. See ml_template/group_encoder.
+    group_keys: list[str] = field(default_factory=list)
 
     @property
     def all_features(self) -> list[str]:
-        return [*self.numerical, *self.categorical]
+        return [*self.numerical, *self.categorical, *self.group_keys]
 
 
 @dataclass(frozen=True)
@@ -144,14 +147,8 @@ def _build_config(raw: dict[str, Any]) -> Config:
             f"Supported: {list(SUPPORTED_SPLIT_STRATEGIES)}"
         )
 
-    numerical = list(features["numerical"])
-    categorical = list(features["categorical"])
     target = str(data["target"])
-    if target in [*numerical, *categorical]:
-        raise ValueError(
-            f"data.target '{target}' is also listed under features, which would train the model "
-            "on the answer. Remove it from features.numerical and features.categorical."
-        )
+    feature_config = _build_feature_config(features, target)
 
     return Config(
         seed=int(raw["seed"]),
@@ -162,10 +159,7 @@ def _build_config(raw: dict[str, Any]) -> Config:
             separator=str(data.get("separator", ",")),
             target_mapping=_build_target_mapping(data.get("target_mapping") or {}),
         ),
-        features=FeatureConfig(
-            numerical=numerical,
-            categorical=categorical,
-        ),
+        features=feature_config,
         split=SplitConfig(test_size=test_size, strategy=strategy),
         model=ModelConfig(
             task=task,
@@ -177,7 +171,7 @@ def _build_config(raw: dict[str, Any]) -> Config:
             results_dir=resolve_path(evaluation["results_dir"]),
             metrics=list(evaluation["metrics"]),
         ),
-        validation=_build_validation_config(validation, numerical),
+        validation=_build_validation_config(validation, feature_config.numerical),
     )
 
 
@@ -197,6 +191,24 @@ def _build_validation_config(
         report_dir=resolve_path(validation["report_dir"]),
         value_ranges=_build_value_ranges(validation.get("value_ranges") or {}, numerical_features),
     )
+
+
+def _build_feature_config(features: dict[str, Any], target: str) -> FeatureConfig:
+    numerical = list(features["numerical"])
+    categorical = list(features["categorical"])
+    group_keys = list(features.get("group_keys") or [])
+
+    declared = numerical + categorical + group_keys
+    if target in declared:
+        raise ValueError(
+            f"data.target '{target}' is also listed under features, which would train the model "
+            "on the answer. Remove it from features.numerical, categorical and group_keys."
+        )
+    duplicates = sorted({name for name in declared if declared.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"Columns declared under more than one feature kind: {duplicates}")
+
+    return FeatureConfig(numerical=numerical, categorical=categorical, group_keys=group_keys)
 
 
 def _build_target_mapping(raw_mapping: dict[Any, Any]) -> dict[Any, int]:

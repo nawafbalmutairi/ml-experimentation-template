@@ -20,6 +20,7 @@ ml_template/config.py            Loads and validates config.yaml into typed data
 ml_template/data_processor.py    Loading, validation and cleaning
 ml_template/data_validator.py    Data-quality checks, quality gate and report rendering
 ml_template/feature_engineer.py  Feature/target split and the preprocessing ColumnTransformer
+ml_template/group_encoder.py     Leak-safe target encoding for group columns
 ml_template/model.py             Model creation from configuration
 ml_template/train.py             Training entry point (orchestration only)
 ml_template/evaluate.py          Classification and regression metrics, metric persistence
@@ -63,6 +64,7 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `data.separator` | CSV delimiter, defaults to `,` |
 | `data.target_mapping` | Optional label → integer map, e.g. `"yes": 1`. Keys keep their YAML type, so numeric labels stay numeric; quote text keys — YAML reads bare `yes`/`no` as booleans |
 | `features.numerical` / `features.categorical` | Feature columns by type |
+| `features.group_keys` | Optional columns naming a group — a household, a ticket, an order — encoded by the group's target rate rather than used raw |
 | `split.test_size` | Test fraction, between 0 and 1. Both strategies round the held-out count up, and refuse a split that leaves either half empty |
 | `split.strategy` | `random` (default, stratified for classification) or `temporal`, which holds out the last rows in file order |
 | `model.task` | `classification` or `regression` |
@@ -219,6 +221,33 @@ Two habits follow. Use it to separate models that differ a lot, not to choose be
 differ a little — a gap inside the fold-to-fold spread is unresolved, not decided. And prefer a
 genuine holdout whenever the data allows one; the single split that `train.py` performs is a weaker
 estimate but an honest one.
+
+## Group columns
+
+People who travel, shop or transact together often share an outcome. A column naming that group — a
+household, a ticket, an order, a device — is useless raw: it is high-cardinality, and new data
+mostly contains groups training never saw. What generalises is the group's observed outcome rate.
+
+```yaml
+features:
+  numerical: [age, fare]
+  categorical: [sex, embarked]
+  group_keys: [surname, ticket]
+```
+
+Each key becomes two columns: the group's target rate, and a flag for whether the group was seen at
+all. The flag matters — a missing rate means "no labelled member of this group", which is a fact
+about the row rather than an absence to impute away.
+
+**Computing this is a well-known way to leak, so it is done as a fitted transformer inside the
+pipeline.** A row is never encoded with its own label; a fold learns rates only from its own
+training rows; a held-out row is scored from training rows alone. Computing the same statistic over
+a whole dataset before splitting is the tempting shortcut and it inflates every estimate that
+follows — measured on synthetic data where groups share an outcome 85% of the time, precomputing
+overstated a true holdout by 7.1 points against 3.8 for the fitted encoder.
+
+Note the second figure is not zero. Fitting per fold removes the leak, not cross-validation's own
+optimism.
 
 ## Features the template does not create
 
