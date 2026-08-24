@@ -18,6 +18,13 @@ RAW_STAGE = "raw"
 PROCESSED_STAGE = "processed"
 
 SCHEMA_CHECK = "schema"
+DUPLICATES_CHECK = "duplicates"
+
+# Raw-stage errors that have to be judged before cleaning runs. Without the configured columns
+# there is nothing to clean; and cleaning erases the duplicates, so by the processed stage the
+# share is always 0% and max_duplicate_fraction could never fire. Everything else the raw stage
+# reports is advisory, because the processed stage still sees it if cleaning left it behind.
+BLOCKING_RAW_CHECKS = (SCHEMA_CHECK, DUPLICATES_CHECK)
 
 
 class DataQualityError(RuntimeError):
@@ -116,13 +123,14 @@ def check_duplicates(
     frame: pd.DataFrame,
     max_duplicate_fraction: float,
 ) -> list[ValidationIssue]:
+    """Count rows identical across every column — exactly the rows cleaning removes."""
     if frame.empty:
         return []
     fraction = float(frame.duplicated().mean())
     if fraction > max_duplicate_fraction:
         return [
             ValidationIssue(
-                "duplicates",
+                DUPLICATES_CHECK,
                 ERROR,
                 f"{fraction:.1%} of rows are duplicates, "
                 f"above the {max_duplicate_fraction:.1%} threshold",
@@ -217,12 +225,20 @@ def validate_dataset(frame: pd.DataFrame, config: Config, stage: str) -> Validat
     features = config.features
     modelling_columns = [*features.all_features, config.data.target]
 
+    # A duplicate record is only recognisable while the columns that tell records apart are still
+    # there. Once cleaning has narrowed the frame to the modelling columns, identical-looking rows
+    # are distinct observations that happen to share features, so the raw stage is where this is
+    # both measurable and enforced.
+    duplicates = (
+        check_duplicates(frame, validation.max_duplicate_fraction) if stage == RAW_STAGE else []
+    )
+
     issues = [
         *check_schema(frame, modelling_columns),
         *check_minimum_rows(frame, validation.min_rows),
         *check_data_types(frame, features.numerical, features.categorical),
         *check_missingness(frame, features.all_features, validation.max_missing_fraction),
-        *check_duplicates(frame, validation.max_duplicate_fraction),
+        *duplicates,
         *check_invalid_values(frame, modelling_columns, validation.value_ranges),
         *check_target_quality(
             frame,
@@ -266,13 +282,20 @@ def _render_report(
         f"- Minimum class fraction: {config.min_class_fraction:.1%}",
     ]
 
-    for report in reports:
+    for position, report in enumerate(reports):
         lines += [
             "",
             f"## Stage: {report.stage}",
             "",
             f"- Result: {'PASSED' if report.passed else 'FAILED'}",
             f"- Rows: {report.row_count}",
+        ]
+        if position:
+            previous = reports[position - 1]
+            lines.append(
+                f"- Rows removed since {previous.stage}: {previous.row_count - report.row_count}"
+            )
+        lines += [
             f"- Columns: {report.column_count}",
             f"- Errors: {len(report.errors)}",
             f"- Warnings: {len(report.warnings)}",

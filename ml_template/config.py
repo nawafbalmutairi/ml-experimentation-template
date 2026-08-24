@@ -25,7 +25,7 @@ class DataConfig:
     processed_path: Path
     target: str
     separator: str = ","
-    target_mapping: dict[str, int] = field(default_factory=dict)
+    target_mapping: dict[Any, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -144,18 +144,27 @@ def _build_config(raw: dict[str, Any]) -> Config:
             f"Supported: {list(SUPPORTED_SPLIT_STRATEGIES)}"
         )
 
+    numerical = list(features["numerical"])
+    categorical = list(features["categorical"])
+    target = str(data["target"])
+    if target in [*numerical, *categorical]:
+        raise ValueError(
+            f"data.target '{target}' is also listed under features, which would train the model "
+            "on the answer. Remove it from features.numerical and features.categorical."
+        )
+
     return Config(
         seed=int(raw["seed"]),
         data=DataConfig(
             raw_path=resolve_path(data["raw_path"]),
             processed_path=resolve_path(data["processed_path"]),
-            target=str(data["target"]),
+            target=target,
             separator=str(data.get("separator", ",")),
             target_mapping=_build_target_mapping(data.get("target_mapping") or {}),
         ),
         features=FeatureConfig(
-            numerical=list(features["numerical"]),
-            categorical=list(features["categorical"]),
+            numerical=numerical,
+            categorical=categorical,
         ),
         split=SplitConfig(test_size=test_size, strategy=strategy),
         model=ModelConfig(
@@ -168,11 +177,14 @@ def _build_config(raw: dict[str, Any]) -> Config:
             results_dir=resolve_path(evaluation["results_dir"]),
             metrics=list(evaluation["metrics"]),
         ),
-        validation=_build_validation_config(validation),
+        validation=_build_validation_config(validation, numerical),
     )
 
 
-def _build_validation_config(validation: dict[str, Any]) -> ValidationConfig:
+def _build_validation_config(
+    validation: dict[str, Any],
+    numerical_features: list[str],
+) -> ValidationConfig:
     min_rows = int(validation["min_rows"])
     if min_rows < 1:
         raise ValueError(f"validation.min_rows must be at least 1, got {min_rows}")
@@ -183,18 +195,24 @@ def _build_validation_config(validation: dict[str, Any]) -> ValidationConfig:
         max_duplicate_fraction=_fraction(validation, "max_duplicate_fraction"),
         min_class_fraction=_fraction(validation, "min_class_fraction"),
         report_dir=resolve_path(validation["report_dir"]),
-        value_ranges=_build_value_ranges(validation.get("value_ranges") or {}),
+        value_ranges=_build_value_ranges(validation.get("value_ranges") or {}, numerical_features),
     )
 
 
-def _build_target_mapping(raw_mapping: dict[Any, Any]) -> dict[str, int]:
+def _build_target_mapping(raw_mapping: dict[Any, Any]) -> dict[Any, int]:
+    """Keys keep the type YAML gave them, so they can match the labels in the column.
+
+    Coercing them to strings would leave a numeric target's 1 and 2 unmatchable by '1' and '2',
+    and `encode_target` would report the mapping as having no entry for labels the config
+    visibly maps.
+    """
     boolean_keys = [label for label in raw_mapping if isinstance(label, bool)]
     if boolean_keys:
         raise ValueError(
             "data.target_mapping keys must be quoted: YAML reads yes, no, true and false as "
             "booleans, so write 'yes': 1 rather than yes: 1"
         )
-    return {str(label): int(code) for label, code in raw_mapping.items()}
+    return {label: int(code) for label, code in raw_mapping.items()}
 
 
 def _fraction(validation: dict[str, Any], name: str) -> float:
@@ -204,7 +222,22 @@ def _fraction(validation: dict[str, Any], name: str) -> float:
     return value
 
 
-def _build_value_ranges(raw_ranges: dict[str, Any]) -> dict[str, ValueRange]:
+def _build_value_ranges(
+    raw_ranges: dict[str, Any],
+    numerical_features: list[str],
+) -> dict[str, ValueRange]:
+    """Bounds only apply to numeric columns, so a key naming anything else is a typo.
+
+    Accepting it would leave the bound silently switched off — configuration that looks present
+    and does nothing.
+    """
+    unknown = sorted(set(raw_ranges) - set(numerical_features))
+    if unknown:
+        raise ValueError(
+            f"validation.value_ranges names columns that are not numerical features: {unknown}. "
+            f"Available: {numerical_features}"
+        )
+
     ranges = {}
     for column, bounds in raw_ranges.items():
         if not isinstance(bounds, dict):

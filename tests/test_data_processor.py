@@ -92,13 +92,13 @@ def test_clean_dataset_keeps_rows_with_missing_features() -> None:
     assert len(cleaned) == 2
 
 
-def test_clean_dataset_removes_duplicates_and_unused_columns() -> None:
+def test_clean_dataset_removes_fully_identical_rows_and_unused_columns() -> None:
     frame = pd.DataFrame(
         {
             "age": [30, 30, 40],
             "city": ["a", "a", "b"],
             TARGET: [1, 1, 0],
-            "note": ["keep", "out", "of it"],
+            "note": ["same", "same", "different"],
         }
     )
 
@@ -106,6 +106,22 @@ def test_clean_dataset_removes_duplicates_and_unused_columns() -> None:
 
     assert list(cleaned.columns) == [*FEATURES, TARGET]
     assert len(cleaned) == 2
+
+
+def test_clean_dataset_keeps_rows_a_non_modelling_column_makes_distinct() -> None:
+    """Two customers can share every feature; collapsing them would destroy real observations."""
+    frame = pd.DataFrame(
+        {
+            "customer_id": [1, 2, 3],
+            "age": [30, 30, 30],
+            "city": ["a", "a", "a"],
+            TARGET: [1, 1, 1],
+        }
+    )
+
+    cleaned = clean_dataset(frame, FEATURES, TARGET)
+
+    assert len(cleaned) == 3
 
 
 def test_clean_dataset_rejects_missing_target_column() -> None:
@@ -139,10 +155,11 @@ def test_drop_rows_with_invalid_values_keeps_missing_values() -> None:
     assert len(kept) == 2
 
 
-def test_drop_rows_with_invalid_values_ignores_unconfigured_and_absent_columns() -> None:
+def test_drop_rows_with_invalid_values_skips_non_numeric_columns() -> None:
+    """A bound cannot be compared against text. Config rejects such a key before it gets here."""
     frame = pd.DataFrame({"age": [-5.0, 30.0], "city": ["a", "b"]})
 
-    kept = drop_rows_with_invalid_values(frame, {"absent": ValueRange(minimum=0)})
+    kept = drop_rows_with_invalid_values(frame, {"city": ValueRange(minimum=0)})
 
     assert len(kept) == 2
 

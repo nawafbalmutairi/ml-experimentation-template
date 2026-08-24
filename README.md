@@ -27,7 +27,7 @@ ml_template/predict.py           Inference with the saved pipeline
 tests/                           Unit tests
 models/                          Saved pipelines
 experiments/results/             Metric JSON files, one per training run
-reports/                         Figures and write-ups you produce
+reports/                         Write-ups you produce (tracked); figures and prediction CSVs (ignored)
 reports/data_quality/            Data-quality reports, one per training run
 scripts/verify.py                The one verification command (format, lint, types, tests)
 scripts/lift_analysis.py         Decile lift on the held-out set, for ranking problems
@@ -58,11 +58,11 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `seed` | Random seed for the split and the model |
 | `data.raw_path` | Input dataset |
 | `data.processed_path` | Where the cleaned dataset is written |
-| `data.target` | Target column |
+| `data.target` | Target column. Listing it under `features` too is rejected as leakage |
 | `data.separator` | CSV delimiter, defaults to `,` |
-| `data.target_mapping` | Optional label → integer map, e.g. `"yes": 1`. Quote the keys — YAML reads bare `yes`/`no` as booleans |
+| `data.target_mapping` | Optional label → integer map, e.g. `"yes": 1`. Keys keep their YAML type, so numeric labels stay numeric; quote text keys — YAML reads bare `yes`/`no` as booleans |
 | `features.numerical` / `features.categorical` | Feature columns by type |
-| `split.test_size` | Test fraction, between 0 and 1 |
+| `split.test_size` | Test fraction, between 0 and 1. Both strategies round the held-out count up, and refuse a split that leaves either half empty |
 | `split.strategy` | `random` (default, stratified for classification) or `temporal`, which holds out the last rows in file order |
 | `model.task` | `classification` or `regression` |
 | `model.type` | Model family (`xgboost` ships with the template) |
@@ -74,7 +74,7 @@ Everything experiment-specific lives in `config/config.yaml`:
 | `validation.max_missing_fraction` | Highest tolerated missing share per feature column |
 | `validation.max_duplicate_fraction` | Highest tolerated share of duplicate rows |
 | `validation.min_class_fraction` | Smallest tolerated class share (classification only) |
-| `validation.value_ranges` | Optional per-column `min`/`max` bounds |
+| `validation.value_ranges` | Optional `min`/`max` bounds, keyed by a column listed in `features.numerical`; any other key is rejected as a typo rather than silently ignored |
 | `validation.report_dir` | Where data-quality reports are written |
 
 Relative paths resolve against **the directory you run from**, so run the commands from the project
@@ -98,9 +98,9 @@ feature values are imputed inside the pipeline, fitted on training data only.
 ## Data quality
 
 Every training run validates the dataset twice — once as loaded, once after cleaning — and writes a
-Markdown report to `validation.report_dir`. Seven independent checks run at both stages, though
-cleaning removes duplicates, missing-target rows and out-of-range values, so those findings should
-appear in the raw stage only:
+Markdown report to `validation.report_dir`, including how many rows cleaning removed between the two
+stages. Seven independent checks are available; six run at both stages, and `duplicates` runs at the
+raw stage only:
 
 | Check | Fails when |
 | --- | --- |
@@ -108,16 +108,20 @@ appear in the raw stage only:
 | `minimum_rows` | Fewer rows than `min_rows` |
 | `data_types` | A numerical feature is non-numeric (error), or a categorical feature is numeric (warning) |
 | `missingness` | A feature exceeds `max_missing_fraction` |
-| `duplicates` | Duplicate rows exceed `max_duplicate_fraction` |
+| `duplicates` | Rows identical across **every** column exceed `max_duplicate_fraction` (raw stage only) |
 | `invalid_values` | Infinities, or values outside a configured `value_ranges` bound |
 | `target_quality` | Target missing, constant, not integer-encoded as `0..n-1` for classification, below `min_class_fraction`, or non-numeric for regression |
 
 The two stages are treated differently on purpose:
 
-- **Raw stage is advisory.** Cleaning is expected to remove duplicates, missing-target rows and
-  values outside `value_ranges`, so those findings are reported but do not stop the run. The one
-  exception is a `schema` error — without the configured columns there is nothing to clean, so
-  training stops immediately.
+- **Raw stage is advisory, with two exceptions.** Cleaning is expected to remove missing-target rows
+  and values outside `value_ranges`, so those findings are reported but do not stop the run. A
+  `schema` error stops it immediately — without the configured columns there is nothing to clean.
+  So does a `duplicates` error: cleaning is about to remove those rows, and once it has, the share
+  is 0% and `max_duplicate_fraction` could never fire. The raw stage is also the only place
+  duplication is measurable, because cleaning drops the columns — a customer id, a timestamp — that
+  tell one record from another. Two rows sharing every configured feature and label afterwards are
+  distinct observations, not duplicates, and are kept.
 - **Processed stage is the gate.** Any error after cleaning raises `DataQualityError` and training
   stops before the model is trained or the processed dataset is written.
 
@@ -150,7 +154,9 @@ parameters and row counts.
 - Regression: `mae`, `rmse`, `r2`
 
 Asking for a metric that does not exist for the configured task fails with a clear error rather than
-silently reporting the wrong thing.
+silently reporting the wrong thing. So does a test split holding a single class: the averaging mode
+and positive class come from the classes the model was fitted on, not from whichever survived the
+split, so a model predicting nothing but the majority class cannot report a perfect 1.0.
 
 ## Prediction
 

@@ -40,14 +40,28 @@ def held_out_scores(config: Config) -> pd.DataFrame:
     if scores is None:
         raise SystemExit("Lift needs a binary classifier that can produce probabilities.")
 
-    return pd.DataFrame({"score": scores, "actual": target_test.to_numpy()}).sort_values(
+    # The positive class is the model's highest label, matching the column the scores come from.
+    # Reading the labels as 0/1 would call class 2 of a {1, 2} target a positive twice over.
+    positive_label = pipeline[-1].classes_[-1]
+    actual = (target_test.to_numpy() == positive_label).astype(int)
+    return pd.DataFrame({"score": scores, "actual": actual}).sort_values(
         "score", ascending=False, ignore_index=True
     )
 
 
 def render_lift_table(ranked: pd.DataFrame) -> str:
-    base_rate = float(ranked["actual"].mean())
+    if len(ranked) < DECILES:
+        raise SystemExit(
+            f"Decile lift needs at least {DECILES} held-out rows, got {len(ranked)}. "
+            "Raise split.test_size, or use more data."
+        )
     total_positives = int(ranked["actual"].sum())
+    if not total_positives:
+        raise SystemExit(
+            "The held-out set contains no positives, so there is no lift to measure. "
+            "Re-split the data, or use a larger test set."
+        )
+    base_rate = float(ranked["actual"].mean())
 
     lines = [
         f"Held-out rows: {len(ranked)}, positives: {total_positives}, base rate: {base_rate:.2%}",

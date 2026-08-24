@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,7 @@ def validate_columns(frame: pd.DataFrame, required_columns: Sequence[str]) -> No
         raise ValueError(f"Dataset is missing required columns: {missing}")
 
 
-def encode_target(frame: pd.DataFrame, target: str, mapping: dict[str, int]) -> pd.DataFrame:
+def encode_target(frame: pd.DataFrame, target: str, mapping: dict[Any, int]) -> pd.DataFrame:
     """Replace class labels with the integers the estimator expects.
 
     Unmapped labels are an error rather than a silent NaN, which cleaning would drop as a
@@ -75,14 +76,19 @@ def clean_dataset(
 ) -> pd.DataFrame:
     """Return the modelling columns with unusable rows removed.
 
+    Duplicates are dropped across every column, before the frame is narrowed, so this removes
+    exactly the rows `check_duplicates` counts. Deduplicating after narrowing would collapse rows
+    that a non-modelling column — a customer id, a timestamp — makes distinct, discarding genuine
+    observations that no check ever reported.
+
     Missing feature values are deliberately left in place: they are imputed inside the
     preprocessing pipeline so that imputation statistics are learned from training data only.
     """
     validate_columns(frame, [*feature_columns, target])
-    selected = frame[[*feature_columns, target]]
+    selected = frame.drop_duplicates()[[*feature_columns, target]]
     cleaned = drop_rows_with_missing_target(selected, target)
     cleaned = drop_rows_with_invalid_values(cleaned, value_ranges or {})
-    return cleaned.drop_duplicates().reset_index(drop=True)
+    return cleaned.reset_index(drop=True)
 
 
 def save_dataset(frame: pd.DataFrame, path: Path) -> None:

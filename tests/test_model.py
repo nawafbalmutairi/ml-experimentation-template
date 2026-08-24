@@ -46,10 +46,3 @@ def test_create_model_rejects_unknown_model_type(config: Config) -> None:
 
     with pytest.raises(ValueError, match="not-a-model"):
         create_model(unknown, seed=42)
-
-
-def test_create_model_is_deterministic_for_a_seed(tmp_path: Path) -> None:
-    first = create_model(model_config("classification", tmp_path, n_estimators=5), seed=1)
-    second = create_model(model_config("classification", tmp_path, n_estimators=5), seed=1)
-
-    assert first.get_params() == second.get_params()

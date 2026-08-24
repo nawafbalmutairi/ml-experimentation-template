@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import joblib
@@ -18,9 +19,9 @@ from ml_template.config import (
 )
 from ml_template.data_processor import clean_dataset, encode_target, load_dataset, save_dataset
 from ml_template.data_validator import (
+    BLOCKING_RAW_CHECKS,
     PROCESSED_STAGE,
     RAW_STAGE,
-    SCHEMA_CHECK,
     DataQualityError,
     ValidationReport,
     validate_dataset,
@@ -50,9 +51,19 @@ def split_train_test(
     The temporal strategy assumes the dataset is already in chronological order and keeps that
     order, so the model is only ever fitted on rows that precede the ones it is scored on. It
     cannot stratify: forcing the class balance would mean reaching into the future.
+
+    Both strategies round the held-out count up, so identical configuration holds out identical
+    numbers of rows whichever one is chosen, and both refuse a split that leaves either half
+    empty rather than failing later inside the pipeline with an unrelated message.
     """
     if config.split.strategy == TEMPORAL_SPLIT:
-        train_rows = len(features) - round(len(features) * config.split.test_size)
+        test_rows = math.ceil(len(features) * config.split.test_size)
+        train_rows = len(features) - test_rows
+        if test_rows < 1 or train_rows < 1:
+            raise ValueError(
+                f"split.test_size={config.split.test_size} splits {len(features)} rows into "
+                f"{train_rows} training and {test_rows} test rows; both halves need at least one."
+            )
         return (
             features.iloc[:train_rows],
             features.iloc[train_rows:],
@@ -82,7 +93,7 @@ def run_training(config: Config) -> dict[str, float]:
     raw = load_dataset(config.data.raw_path, config.data.separator)
     raw = encode_target(raw, config.data.target, config.data.target_mapping)
     raw_report = validate_dataset(raw, config, RAW_STAGE)
-    if raw_report.has_error(SCHEMA_CHECK):
+    if any(raw_report.has_error(check) for check in BLOCKING_RAW_CHECKS):
         raise quality_error(raw_report, write_quality_report([raw_report], config.validation))
 
     cleaned = clean_dataset(

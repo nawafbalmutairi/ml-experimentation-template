@@ -36,7 +36,9 @@ def evaluate_model(
 
     if task == CLASSIFICATION:
         probabilities = positive_class_scores(pipeline, features)
-        available = classification_metrics(target, predictions, probabilities)
+        available = classification_metrics(
+            target, predictions, probabilities, labels=list(pipeline[-1].classes_)
+        )
     elif task == REGRESSION:
         available = regression_metrics(target, predictions)
     else:
@@ -54,8 +56,16 @@ def classification_metrics(
     target: pd.Series,
     predictions: np.ndarray,
     probabilities: np.ndarray | None,
+    labels: Sequence[Any] | None = None,
 ) -> dict[str, float]:
     """Metrics for any label type.
+
+    `labels` is the class set the model was fitted on, and it decides both the averaging mode and
+    which class counts as positive. Inferring it from `target` instead lets the test split rewrite
+    the contract: a split that happens to hold one class would be scored as a one-class problem,
+    and a model predicting nothing but that class would report a perfect precision and recall.
+    It defaults to the classes present in the target and the predictions, for callers scoring two
+    plain arrays without a fitted estimator to hand.
 
     Binary targets are compared against the highest label, which matches the column
     `predict_proba` returns second and the class scikit-learn treats as positive. Labels are
@@ -63,21 +73,32 @@ def classification_metrics(
     target. Targets with more than two classes are averaged with `macro`, weighting every class
     equally.
     """
-    labels = sorted(pd.unique(target))
-    is_binary = len(labels) == 2
+    observed = set(pd.unique(target))
+    if len(observed) < 2:
+        raise ValueError(
+            f"The evaluated split holds a single class {sorted(observed, key=repr)}, so precision, "
+            "recall and F1 on it measure nothing: a model that predicts only that class scores a "
+            "perfect 1.0. Enlarge split.test_size, or re-split the data."
+        )
+
+    known = _known_labels(target, predictions) if labels is None else sorted(labels)
+    is_binary = len(known) == 2
     average = "binary" if is_binary else "macro"
 
     if is_binary:
-        actual = (target == labels[-1]).astype(int)
-        predicted = (np.asarray(predictions) == labels[-1]).astype(int)
+        actual = (target == known[-1]).astype(int)
+        predicted = (np.asarray(predictions) == known[-1]).astype(int)
+        metric_labels: list[Any] = [0, 1]
     else:
         actual, predicted = target, predictions
+        metric_labels = known
 
+    scoring = {"labels": metric_labels, "average": average, "zero_division": 0}
     metrics = {
         "accuracy": float(accuracy_score(target, predictions)),
-        "precision": float(precision_score(actual, predicted, average=average, zero_division=0)),
-        "recall": float(recall_score(actual, predicted, average=average, zero_division=0)),
-        "f1": float(f1_score(actual, predicted, average=average, zero_division=0)),
+        "precision": float(precision_score(actual, predicted, **scoring)),
+        "recall": float(recall_score(actual, predicted, **scoring)),
+        "f1": float(f1_score(actual, predicted, **scoring)),
     }
     if probabilities is not None and is_binary:
         metrics["roc_auc"] = float(roc_auc_score(actual, probabilities))
@@ -85,6 +106,11 @@ def classification_metrics(
         # whose baseline is 0.5 regardless of how rare the positive class is.
         metrics["average_precision"] = float(average_precision_score(actual, probabilities))
     return metrics
+
+
+def _known_labels(target: pd.Series, predictions: np.ndarray) -> list[Any]:
+    """Every class either side names, so one that is only ever predicted still counts."""
+    return sorted(set(pd.unique(target)) | set(pd.unique(np.asarray(predictions))))
 
 
 def regression_metrics(target: pd.Series, predictions: np.ndarray) -> dict[str, float]:

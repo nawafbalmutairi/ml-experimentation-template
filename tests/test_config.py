@@ -144,6 +144,33 @@ def test_load_config_rejects_unquoted_yaml_boolean_label_keys(tmp_path: Path) ->
         load_config(path)
 
 
+def test_load_config_keeps_numeric_target_mapping_keys(tmp_path: Path) -> None:
+    """Stringifying them leaves a numeric column's 1 and 2 unmatched by the map that names them."""
+    data = {**VALID_CONFIG["data"], "target_mapping": {1: 0, 2: 1}}
+
+    config = load_config(write_config(tmp_path, data=data))
+
+    assert config.data.target_mapping == {1: 0, 2: 1}
+
+
+def test_load_config_rejects_a_target_that_is_also_a_feature(tmp_path: Path) -> None:
+    """Training on the answer is the classic leakage config error, so it gets a named failure."""
+    features = {**VALID_CONFIG["features"], "numerical": ["age", "label"]}
+
+    with pytest.raises(ValueError, match="also listed under features"):
+        load_config(write_config(tmp_path, features=features))
+
+
+def test_load_config_rejects_a_value_range_for_a_column_that_is_not_a_feature(
+    tmp_path: Path,
+) -> None:
+    """A typo'd key would otherwise leave the bound silently switched off."""
+    validation = {**VALID_CONFIG["validation"], "value_ranges": {"agee": {"min": 0}}}
+
+    with pytest.raises(ValueError, match="agee"):
+        load_config(write_config(tmp_path, validation=validation))
+
+
 def test_load_config_reports_a_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_config(tmp_path / "absent.yaml")

@@ -158,6 +158,82 @@ def test_temporal_split_does_not_reorder_or_overlap(
     )
 
 
+def sized(config: Config, test_size: float) -> Config:
+    return replace(config, split=replace(config.split, test_size=test_size))
+
+
+def test_temporal_split_always_holds_out_at_least_one_row(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """0.01 of 50 rows once rounded to nothing, failing later inside SimpleImputer instead."""
+    features, target = split_features_and_target(
+        training_frame.head(50), config.features.all_features, config.data.target
+    )
+
+    _, features_test, _, target_test = split_train_test(
+        features, target, temporal(sized(config, 0.01))
+    )
+
+    assert len(features_test) == len(target_test) == 1
+
+
+def test_temporal_split_rejects_a_test_size_that_leaves_nothing_to_train_on(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    features, target = split_features_and_target(
+        training_frame.head(50), config.features.all_features, config.data.target
+    )
+
+    with pytest.raises(ValueError, match="test_size"):
+        split_train_test(features, target, temporal(sized(config, 0.99)))
+
+
+def test_both_split_strategies_hold_out_the_same_number_of_rows(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """30 rows at 0.15 is 4.5: rounding to nearest and rounding up must not disagree."""
+    awkward = sized(config, 0.15)
+    features, target = split_features_and_target(
+        training_frame.head(30), config.features.all_features, config.data.target
+    )
+
+    _, random_test, _, _ = split_train_test(features, target, awkward)
+    _, temporal_test, _, _ = split_train_test(features, target, temporal(awkward))
+
+    assert len(temporal_test) == len(random_test) == 5
+
+
+def test_random_split_preserves_the_class_balance(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """20% positives overall, so a stratified quarter holds exactly 6 of the 24."""
+    imbalanced = training_frame.assign(churned=[1] * 24 + [0] * 96)
+    features, target = split_features_and_target(
+        imbalanced, config.features.all_features, config.data.target
+    )
+
+    _, _, target_train, target_test = split_train_test(features, target, config)
+
+    assert int(target_test.sum()) == 6
+    assert int(target_train.sum()) == 18
+
+
+def test_random_split_repeats_exactly_for_a_seed_and_changes_with_it(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    features, target = split_features_and_target(
+        training_frame, config.features.all_features, config.data.target
+    )
+    other_seed = replace(config, seed=config.seed + 1)
+
+    first = split_train_test(features, target, config)[1].index.tolist()
+    again = split_train_test(features, target, config)[1].index.tolist()
+    elsewhere = split_train_test(features, target, other_seed)[1].index.tolist()
+
+    assert first == again
+    assert first != elsewhere
+
+
 def test_random_split_shuffles_rather_than_taking_the_tail(
     config: Config, training_frame: pd.DataFrame
 ) -> None:
@@ -237,14 +313,54 @@ def test_training_stops_before_cleaning_when_columns_are_missing(
     assert "## Stage: processed" not in content
 
 
-def test_raw_duplicates_do_not_block_training(config: Config, training_frame: pd.DataFrame) -> None:
+def test_raw_duplicates_over_the_threshold_block_training(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """Cleaning erases duplicates, so the raw stage is the only place the threshold can fire."""
     duplicated = pd.concat([training_frame, training_frame], ignore_index=True)
 
-    metrics = train_on(config, duplicated)
+    with pytest.raises(DataQualityError, match="duplicates"):
+        train_on(config, duplicated)
+
+    assert not config.model.output_path.exists()
+    assert not config.data.processed_path.exists()
+
+
+def test_raw_duplicates_under_the_threshold_are_cleaned_away(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    tolerant = replace(config, validation=replace(config.validation, max_duplicate_fraction=0.5))
+    duplicated = pd.concat([training_frame, training_frame], ignore_index=True)
+
+    metrics = train_on(tolerant, duplicated)
 
     assert metrics["accuracy"] > 0.8
-    content = quality_reports(config)[0].read_text(encoding="utf-8")
-    assert "duplicates" in content
+    assert len(pd.read_csv(tolerant.data.processed_path)) == len(training_frame)
+
+
+def test_the_quality_report_shows_how_many_rows_cleaning_removed(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """A silent 800-row loss between the two stages is the failure this line makes visible."""
+    tolerant = replace(config, validation=replace(config.validation, max_duplicate_fraction=0.5))
+    duplicated = pd.concat([training_frame, training_frame], ignore_index=True)
+
+    train_on(tolerant, duplicated)
+
+    content = quality_reports(tolerant)[0].read_text(encoding="utf-8")
+    assert f"- Rows removed since raw: {len(training_frame)}" in content
+
+
+def test_duplicates_counted_at_the_raw_stage_are_the_rows_cleaning_removes(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """An id column makes every row unique, so nothing is duplicated and nothing may be dropped."""
+    identified = training_frame.assign(customer_id=range(len(training_frame)))
+    doubled = pd.concat([identified, identified.assign(customer_id=range(120, 240))])
+
+    train_on(config, doubled.reset_index(drop=True))
+
+    assert len(pd.read_csv(config.data.processed_path)) == len(doubled)
 
 
 def test_boolean_class_labels_train_successfully(

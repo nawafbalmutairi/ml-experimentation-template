@@ -110,6 +110,46 @@ def test_classification_metrics_omit_ranking_metrics_without_probabilities() -> 
     assert "average_precision" not in metrics
 
 
+def test_metrics_use_every_class_the_model_knows_not_only_those_in_the_split() -> None:
+    """The split holds two of three classes; scoring it as a binary problem would be wrong."""
+    target = pd.Series([0, 0, 1, 1])
+    predictions = np.array([0, 1, 1, 2])
+
+    metrics = classification_metrics(target, predictions, None, labels=[0, 1, 2])
+
+    assert metrics["precision"] == pytest.approx((1.0 + 0.5 + 0.0) / 3)
+    assert metrics["recall"] == pytest.approx((0.5 + 0.5 + 0.0) / 3)
+
+
+def test_classification_metrics_reject_a_split_holding_a_single_class() -> None:
+    """All-negative test rows and all-negative predictions used to report a perfect 1.0."""
+    target = pd.Series([0] * 40)
+
+    with pytest.raises(ValueError, match="single class"):
+        classification_metrics(target, np.zeros(40, dtype=int), None, labels=[0, 1])
+
+
+def test_evaluate_model_refuses_a_degenerate_test_split(
+    config: Config, training_frame: pd.DataFrame
+) -> None:
+    """A model that learned nothing must not land a perfect score in experiments/results."""
+    features, target = split_features_and_target(
+        training_frame, config.features.all_features, TARGET
+    )
+    pipeline = build_pipeline(config)
+    pipeline.fit(features, target)
+    negatives = target == 0
+
+    with pytest.raises(ValueError, match="single class"):
+        evaluate_model(
+            pipeline,
+            features[negatives],
+            target[negatives],
+            config.model.task,
+            ["precision", "recall", "f1"],
+        )
+
+
 def test_regression_metrics_measure_error() -> None:
     target = pd.Series([1.0, 2.0, 3.0])
     predictions = np.array([1.0, 2.0, 5.0])
